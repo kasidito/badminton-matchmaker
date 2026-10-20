@@ -59,6 +59,8 @@ const viewText = page => page.textContent('#view');
   let d = await db(page);
   check('level changes saved to players', d.players.find(p => p.id === 2).level === 'A' && d.players.find(p => p.id === 10).start_mmr === 1300);
 
+  check('delete buttons are hidden until "ลบสมาชิก" is pressed', (await page.$('[data-act=remove]')) === null);
+  await page.click('[data-act=editmembers]');
   await page.click('[data-act=remove][data-id="13"]');
   await page.waitForSelector('#toast:not([hidden])');
   await saved(page);
@@ -95,13 +97,13 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-act=save][data-ci="0"]');
 
   // check a player out who is on court -> stale court
-  const onCourt = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => el.textContent);
+  const onCourt = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => el.childNodes[0].textContent);
   await page.click('[data-tab=people]');
   const rowSwitch = await page.$$eval('.row', (rows, name) => { const r = rows.find(x => x.querySelector('.who b').textContent === name); return r ? r.querySelector('input[data-act=toggle]').dataset.id : null; }, onCourt.replace(/MMR.*$/, ''));
   await page.uncheck(`input[data-act=toggle][data-id="${rowSwitch}"]`, { force: true });
   await page.click('[data-tab=play]');
   check('checking out someone on court flags that court', (await viewText(page)).includes('ปิดสถานะเล่นแล้ว'));
-  check('a flagged court cannot be saved', await page.isDisabled('[data-act=save][data-ci="1"]'));
+  check('a flagged court cannot be saved', (await page.$('[data-act=save][data-ci="1"]')) === null);
   await page.click('#dock [data-act=fill]');
   check('fill redraws the flagged court and both courts are playing', (await page.$$('.match')).length === 2 && !(await viewText(page)).includes('ปิดสถานะเล่นแล้ว'));
 
@@ -150,9 +152,10 @@ const viewText = page => page.textContent('#view');
 
   // board mode hides controls
   await page.click('[data-tab=play]');
-  await page.click('#boardBtn');
+  check('board-mode icon is not shown on a phone (it is in Settings)', !(await page.isVisible('#boardBtn')));
+  await page.click('#setBtn'); await page.click('label:has([data-act=boardsw]) .track'); await page.click('[data-tab=play]');
   check('board mode hides court buttons', !(await page.isVisible('.court-actions')) && !(await page.isVisible('#dock')));
-  await page.click('#boardBtn');
+  await page.click('#setBtn'); await page.click('label:has([data-act=boardsw]) .track'); await page.click('[data-tab=play]');
 
   // session closed elsewhere (another device ended the night)
   await page.evaluate(() => { const s = window.__fakeDb().sessions.find(x => x.status === 'open'); s.status = 'closed'; localStorage.setItem('fake-supabase-db', JSON.stringify(window.__fakeDb())); });
@@ -184,6 +187,8 @@ const viewText = page => page.textContent('#view');
   await p4.click('#addForm button[type=submit]');
   await p4.waitForSelector('#toast:not([hidden])');
   check('pasting the post sets the court count from "3 สนาม"', (await p4.textContent('#toast')).includes('ตั้ง 3 สนาม'));
+  check('people not here yet are tucked away', !(await p4.isVisible('[data-act=checkall]')));
+  await p4.click('details:has([data-act=checkall]) > summary');
   await p4.click('[data-act=checkall]');
   await p4.click('[data-tab=play]');
   const hint = await p4.textContent('.slot .next');
@@ -220,6 +225,8 @@ const viewText = page => page.textContent('#view');
     await r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body.token === 'abc123' ? { ok: true } : { ok: false, error: 'bad token' }) });
   });
   await p4.click('#setBtn');
+  check('Google Sheet setup is tucked away when not used', !(await p4.isVisible('#sheetUrl')));
+  await p4.click('details:has(#sheetForm) > summary');
   await p4.fill('#sheetUrl', 'https://script.google.com/macros/s/FAKE/exec');
   await p4.fill('#sheetToken', 'wrong');
   await p4.click('#sheetForm button[type=submit]');
@@ -300,6 +307,7 @@ const viewText = page => page.textContent('#view');
   await p2.reload();
   await signIn(p2);
   await p2.click('#setBtn');
+  await p2.click('details:has(#importForm) > summary');
   await p2.fill('#impText', JSON.stringify(old));
   await p2.click('#importForm button[type=submit]');
   await p2.waitForFunction(() => !document.querySelector('.busy'));

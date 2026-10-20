@@ -62,6 +62,9 @@ Tester: ______  Date: ______  Device: ______
 - [ ] Dark mode is readable
 
 ## 9. New in this release
+- [ ] Before anyone checks in, the Courts tab shows a short "เริ่มคืนนี้" guide and the bottom button goes to check-in
+- [ ] Players tab: "มาวันนี้" list on top, "ยังไม่มา" folded below; delete icons only appear after pressing "ลบสมาชิก"
+- [ ] A court shows "บันทึกผล: <winners> ชนะ" only after a winner is picked
 - [ ] Signing in before club night shows "ยังไม่เปิดคืน" in the header; the first check-in changes it to tonight's date
 - [ ] The first empty court shows "ถัดไป" with 4 names; สุ่มลงสนามนี้ puts exactly those 4 on that court
 - [ ] The undo button in the header steps back several actions, even after the bottom message has gone

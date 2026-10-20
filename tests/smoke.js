@@ -114,7 +114,7 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   await page.click('[data-tab=sum]');
   check('finished day appears in history', (await page.textContent('#view')).includes('เกมที่จบแล้ว (1)'));
   await page.click('[data-tab=play]');
-  check('new night starts with nobody checked in', (await page.textContent('#view')).includes('ยังเช็กอินไม่ถึง 4 คน'));
+  check('new night starts with nobody checked in, with a start guide', (await page.textContent('#view')).includes('ยังเช็กอินไม่ถึง 4 คน') && (await page.textContent('#view')).includes('เริ่มคืนนี้'));
 
   await page.screenshot({ path: path.join(__dirname, '..', '..', 'smoke-ipad.png') });
   check('no script errors', errors.length === 0, errors.join(' | '));
