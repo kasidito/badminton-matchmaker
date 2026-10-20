@@ -70,6 +70,7 @@ Row level security allows nothing unless the signed-in user is in `public.admins
 1. Create a spreadsheet (sheets.new), e.g. "รายงานก๊วนแบด".
 2. Extensions → Apps Script. Replace the code with `tools/google-sheet-report.gs`.
 3. In the app: Settings → รายงาน Google Sheet → สร้างรหัสใหม่ → คัดลอกรหัส. Paste it into the script's `TOKEN` line and save.
+   Then choose `setup` in the function menu and press Run once: it creates the four tabs and asks for permission.
 4. In Apps Script: Deploy → New deployment → type **Web app**, Execute as **Me**, Who has access **Anyone** → Deploy, allow access, copy the Web app URL.
 5. In the app: paste the URL → บันทึกและส่งทดสอบ. "เชื่อม Google Sheet สำเร็จ" means it works.
 

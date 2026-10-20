@@ -58,6 +58,22 @@ function doPost(e) {
   }
 }
 
+const SHEETS = {
+  'คืน': ['วันที่', 'คืน', 'รหัสคืน', 'จำนวนแมตช์', 'จำนวนผู้เล่น', 'ส่งเมื่อ'],
+  'ผู้เล่นรายคืน': ['วันที่', 'รหัสคืน', 'ชื่อ', 'ระดับ', 'เล่น', 'ชนะ', 'แพ้', 'MMR เริ่ม', 'MMR จบ', 'เปลี่ยน'],
+  'แมตช์': ['วันที่', 'รหัสคืน', 'แมตช์', 'สนาม', 'โหมด', 'ทีม A', 'ทีม B', 'ทีมที่ชนะ', 'เริ่ม', 'จบ'],
+  'อันดับล่าสุด': ['อันดับ', 'ชื่อ', 'ระดับ', 'MMR', 'แมตช์สะสม']
+};
+
+/** Run once from the Apps Script editor: creates the four tabs and asks for permission. */
+function setup() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  Object.keys(SHEETS).forEach(function (name) { sheet(ss, name, SHEETS[name]); });
+  ss.getSheets().forEach(function (sh) {
+    if (!SHEETS[sh.getName()] && sh.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sh);
+  });
+}
+
 function sheet(ss, name, header) {
   let sh = ss.getSheetByName(name);
   if (!sh) {

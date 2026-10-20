@@ -22,7 +22,9 @@ function load(token) {
     };
     return sh;
   }
-  const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = makeSheet(n)) };
+  sheets['ชีต1'] = makeSheet('ชีต1');
+  const ss = { getSheetByName: n => sheets[n] || null, insertSheet: n => (sheets[n] = makeSheet(n)),
+    getSheets: () => Object.keys(sheets).map(n => Object.assign(sheets[n], { getName: () => n })), deleteSheet: sh => { delete sheets[sh.getName()]; } };
   const ctx = {
     SpreadsheetApp: { getActiveSpreadsheet: () => ss },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
@@ -35,7 +37,7 @@ function load(token) {
   const post = body => ctx.doPost({ postData: { contents: JSON.stringify(body) } });
   // values created inside the vm context belong to another realm; copy them out for deep comparisons
   const plain = x => JSON.parse(JSON.stringify(x));
-  return { post, sheets, plain };
+  return { post, sheets, plain, setup: () => ctx.setup() };
 }
 
 const report = {
@@ -54,7 +56,7 @@ test('rejects a wrong token and an unset token', () => {
 test('test ping succeeds without writing anything', () => {
   const s = load('t0k');
   assert.strictEqual(s.post({ token: 't0k', test: true }).ok, true);
-  assert.strictEqual(Object.keys(s.sheets).length, 0);
+  assert.deepStrictEqual(Object.keys(s.sheets), ['ชีต1']);
 });
 
 test('writes nights, players, matches and ranking; ignores a resend', () => {
@@ -77,3 +79,11 @@ test('ranking is replaced, not appended, on the next night', () => {
   assert.deepStrictEqual(s.plain(s.sheets['อันดับล่าสุด'].rows.map(r => r[1])), ['ชื่อ', 'โฟล์ค']);
   assert.strictEqual(s.sheets['คืน'].rows.length, 3);
 });
+
+test('setup creates the four tabs and removes the empty default tab', () => {
+  const s = load('t0k');
+  s.post; // loaded
+  vmSetup(s);
+  assert.deepStrictEqual(Object.keys(s.sheets).sort(), ['คืน', 'ผู้เล่นรายคืน', 'อันดับล่าสุด', 'แมตช์'].sort());
+});
+function vmSetup(s) { s.setup(); }
