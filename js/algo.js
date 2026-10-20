@@ -130,6 +130,7 @@
         if (inSet[x.id]) return;
         if (i < N) cost += 10;
         if (x.credit < maxC) cost += 30 * (maxC - x.credit);
+        if (x.credit + 1 < maxC) cost += 1000;   // never leave someone 2+ matches behind for a better mix
       });
       var ids = chosen.map(function (x) { return x.id; });
       var order;

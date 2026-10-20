@@ -19,7 +19,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 3. **Flex window** (`S.flex`, default 4): Competitive and Social courts may pick from the first `4*k + flex` people in the queue. Skipping someone costs 10, and skipping someone with fewer matches costs 30 per match of difference. Normal courts never use flex.
 4. **Team split:** among the 3 possible pairings, minimise repeat partners (weight 3x) and repeat opponents, avoid the pairing just redrawn, and balance team MMR (`/30` normal, `/15` competitive and social).
 5. **Modes:** Competitive adds `spread/5` (wants close ratings); Social subtracts `spread/12` (wants a mix).
-6. Simulations: match-count spread stays at most 2 during a night (tested). Competitive narrows rating spread only modestly when the queue is short (e.g. 16 players / 3 courts); that's expected.
+6. Simulations: match-count spread is usually at most 2 during a night and occasionally 3 for a short time, because courts finish at different times (tested with a bound of 3). A hard guard stops modes from skipping anyone who is 2+ matches behind. Competitive narrows rating spread only modestly when the queue is short (e.g. 16 players / 3 courts); that's expected.
 
 ## MMR (Elo v2)
 

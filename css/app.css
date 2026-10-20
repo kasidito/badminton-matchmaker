@@ -1,3 +1,10 @@
+/* Base reset. The page used to run inside a host that supplied these; on GitHub Pages it must carry its own.
+   [hidden] must win over component display rules (.gate, .toast, .dock set display). */
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+
 /* Layout: one narrow column. Sticky header (brand, board + settings icons, 4 tabs). Each court is a green side-view court: Team A card | net (VS) | Team B card. Fixed dock on the courts tab. */
 :root{
   --font-display:'Kanit','Noto Sans Thai',system-ui,sans-serif;

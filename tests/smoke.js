@@ -43,6 +43,8 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   await page.click('#loginForm button');
   await page.waitForSelector('#app:not([hidden])');
   check('admin signs in and an open session is created', (await db()).sessions.filter(s => s.status === 'open').length === 1);
+  check('loading screen is gone after sign-in', !(await page.isVisible('#gate')));
+  check('empty toast bar is not shown', !(await page.isVisible('#toast')));
 
   await page.click('[data-tab=people]');
   const post = 'พุธ 21 ตค 20:00 - 22:00  3 สนาม\n1. ชิน \n2. โฟล์ค\n3. เดือน\n4. นัทซ้าย\n5. เปตอง \n6. ป๊อป \n7. Ard\n8. ภู \n9. กร\n10. ตรัย\n11. บีม\n12. Yiip\n13. ตั้ง\n14. มิว\n15. \n------------------\n16.\n17.\n\nถอนชื่อหลังอังคารเที่ยงแล้วไม่มีคนแทนหารค่าสนามนะคะ';
