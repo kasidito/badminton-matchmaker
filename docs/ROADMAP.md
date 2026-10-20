@@ -27,13 +27,13 @@ Status as of 20 Oct 2026, 19:50. Owner decides order; update this file when some
 | 5 | Show the next 4 on an empty court | S | **Shipped.** Also fixed: on-screen queue and draw now break ties the same way. |
 | 6 | **OpenSkill ratings** | M | Owner approved. Keep Elo for 4–6 weeks first, then compute both from `match_players` history and compare before switching. Show levels, not raw numbers, to avoid new players feeling penalised. |
 
-## Pending decision: sporty UI
+## Sporty UI: design C shipped (20 Oct 2026)
 
 Mockups (Design canvas "จัดคู่ก๊วนแบด – แนวดีไซน์สปอร์ต", https://claude.ai/artifact/6TWuPZ4ijtdiV9StU5VAwM):
 - **A · Scoreboard** — dark, shuttle-yellow accent, Chakra Petch, teams as scoreboard rows, A/B win buttons together, LIVE strip, podium ranking, iPad 3 courts in one row.
 - **C · Sports club app** — light, navy + lime, Prompt, VS circle, diagonal-stripe summary, pill bottom nav.
 - Both move the phone menu to the bottom and put both "win" buttons together.
-Owner to pick A, C or a mix; then restyle via CSS tokens + small markup changes in `js/app.js` views. Fonts must support Thai (Chakra Petch, Prompt, Kanit, Noto Sans Thai).
+Owner picked **C**. Shipped: tokens, Prompt font, bottom pill menu, stripe banners, VS circle, win buttons together, #1 hero on the ranking, avatars on member rows. Fonts must support Thai (Chakra Petch, Prompt, Kanit, Noto Sans Thai).
 
 ## Later / ideas
 

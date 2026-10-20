@@ -81,7 +81,7 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   // reload resumes the same night
   await page.reload();
   await page.waitForSelector('#app:not([hidden])');
-  check('reload resumes with courts and results intact', (await page.$$eval('.match', els => els.length)) === 2 && (await page.textContent('.roundhead')).includes('จบแล้ว 1'));
+  check('reload resumes with courts and results intact', (await page.$$eval('.match', els => els.length)) === 2 && (await page.textContent('#doneCount')) === '1');
 
   // offline: change is kept locally and saved once back online
   await page.evaluate(() => { window.__fakeOffline = true; });

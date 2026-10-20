@@ -210,7 +210,7 @@ const viewText = page => page.textContent('#view');
   await p4.click('#undoBtn');                    // undo the draw
   check('undo 1 empties court 1 again', (await p4.$('[data-act=draw][data-ci="0"]')) !== null);
   await p4.click('#undoBtn');                    // undo the save
-  check('undo 2 brings back the result', (await p4.textContent('.roundhead')).includes('จบแล้ว 0') && (await p4.$('.team.win')) !== null);
+  check('undo 2 brings back the result', (await p4.textContent('#doneCount')) === '0' && (await p4.$('.team.win')) !== null);
   await p4.click('#undoBtn');                    // undo the fill
   check('undo 3 removes the courts filled together', (await p4.$$('.match')).length === 1);
   await p4.click('#undoBtn');                    // undo the first draw

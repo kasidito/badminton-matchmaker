@@ -79,3 +79,6 @@ When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` 
 - Colours come from CSS tokens on `:root` with dark-mode overrides. Never hard-code colours in components.
 - Layout breakpoints: 700px (tablet: courts side by side), 760px (two-column tabs), 1000px (landscape: queue side panel, one-row header, no bottom dock).
 - Rank rows use `.podium`, not `.top` (`.top` is the header).
+- Look is design C "sports club app" (chosen Oct 2026): font Prompt; light grey page, white 20px-radius cards, navy ink `--accent` with lime `--hi`; navy diagonal-stripe banners (`.strip`, `.hero`) for headline numbers. Dark mode swaps to navy surfaces with lime as the accent.
+- Phone and tablet portrait: the menu (`.tabs`) is a floating pill fixed at the bottom; the courts dock sits above it. From 1000px the menu moves into the header.
+- Court card: both win buttons sit together under the teams (`.court-actions` > `.won`); สุ่มใหม่ is the `.redraw` button in the court header.
