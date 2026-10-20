@@ -68,9 +68,12 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   await page.click('[data-act=save][data-ci="0"]');
   check('saving court 1 leaves it empty (no auto-draw)', await page.$('[data-act=draw][data-ci="0"]') !== null);
 
+  const courtName = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => el.childNodes[0].textContent);
+  const queueName = await page.$eval('.qi b', el => el.textContent);
   await page.click('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]');
   await page.click('.qi');
-  check('swap with the queue shows a confirmation', (await page.textContent('#toast')).includes('สลับ'));
+  const swapMsg = await page.textContent('#toast');
+  check('swap toast names both players', swapMsg.includes('สลับ ' + courtName + ' กับ ' + queueName), swapMsg);
 
   await waitSaved();
   let d = await db();

@@ -239,6 +239,86 @@
     if (sync.dirty) { setStatus('pending'); sync.timer = setTimeout(runSync, 500); } else setStatus('saved');
   }
 
+  /* ---------- player edit (name is written straight to players; MMR is a normal manual edit in S.adj) ---------- */
+  async function savePlayerEdit(f) {
+    var id = +f.dataset.id, p = A.findP(S, id); if (!p) return;
+    var name = $('pName').value.replace(/\s+/g, ' ').trim(), val = parseInt($('pMmr').value, 10);
+    var cur = Math.round(A.ratings(S.done, S.players, S.adj).R[id]);
+    if (!name) { toast('ใส่ชื่อก่อน', null); return; }
+    if (S.players.some(function (x) { return x.id !== id && x.name.toLowerCase() === name.toLowerCase(); })) { toast('มีชื่อ "' + name + '" อยู่แล้ว', null); return; }
+    var msgs = [];
+    if (name !== p.name) {
+      ui.busy = 'กำลังบันทึกชื่อ…'; render();
+      try { await DB.updatePlayer(id, { name: name }); msgs.push('เปลี่ยนชื่อเป็น ' + name); p.name = name; }
+      catch (err) { ui.busy = null; toast(err.code === '23505' ? 'มีชื่อนี้ในระบบแล้ว (อาจเป็นสมาชิกที่ถูกลบไป)' : 'เปลี่ยนชื่อไม่ได้: ' + errMsg(err), null); render(); return; }
+      ui.busy = null;
+    }
+    var snap = null;
+    if (!isNaN(val) && val !== cur) {
+      var to = Math.max(0, Math.min(5000, val));
+      snap = JSON.stringify(S); S.adj.push({ at: S.done.length, id: id, to: to }); msgs.push('ตั้ง MMR เป็น ' + to);
+    }
+    ui.editPlayer = null;
+    if (msgs.length) { toast(msgs.join(' และ ') + ' แล้ว', snap); changed(); }
+    render();
+  }
+
+  /* ---------- other admins (edge function manage-admins) ---------- */
+  var ADMIN_ERR = {
+    bad_email: 'อีเมลไม่ถูกต้อง', short_password: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร', cannot_remove_self: 'ถอดสิทธิ์ตัวเองไม่ได้',
+    last_admin: 'ต้องมีผู้ดูแลอย่างน้อย 1 คน', not_admin: 'บัญชีนี้ไม่ใช่ผู้ดูแล', not_signed_in: 'ต้องเข้าสู่ระบบใหม่',
+    use_change_password: 'รหัสของตัวเองให้เปลี่ยนที่หัวข้อบัญชี', not_admin_target: 'คนนี้ไม่ใช่ผู้ดูแลแล้ว'
+  };
+  function adminErr(e) { var m = errMsg(e); return ADMIN_ERR[m] || m; }
+  async function loadAdmins() {
+    if (ui.adminsLoading) return;
+    ui.adminsLoading = true;
+    try { ui.admins = { list: (await DB.admins({ action: 'list' })).admins }; }
+    catch (e) { ui.admins = { error: adminErr(e) }; }
+    ui.adminsLoading = false;
+    if (ui.tab === 'set') render();
+  }
+  async function adminAction(body, okMsg) {
+    ui.busy = 'กำลังบันทึก…'; render();
+    var ok = false;
+    try {
+      var r = await DB.admins(body);
+      ui.admins = { list: r.admins }; ok = true;
+      toast(okMsg || (r.created ? 'เพิ่ม ' + body.email + ' แล้ว แจ้งอีเมลและรหัสผ่านให้เขาเข้าสู่ระบบ' : 'เพิ่ม ' + body.email + ' เป็นผู้ดูแลแล้ว ใช้รหัสผ่านเดิมของบัญชีนั้น'), null);
+    } catch (e) { toast(adminErr(e), null); }
+    ui.busy = null; render();
+    return ok;
+  }
+  function adminsCard() {
+    var h = '<div class="card"><h2>ผู้ดูแลก๊วน</h2>';
+    if (!ui.admins) { loadAdmins(); h += '<span class="muted small">กำลังโหลด…</span>'; }
+    else if (ui.admins.error) h += '<p class="err">โหลดรายชื่อไม่ได้: ' + esc(ui.admins.error) + '</p><button class="btn sm" data-act="admins-reload">ลองใหม่</button>';
+    else {
+      h += '<div class="alist">';
+      ui.admins.list.forEach(function (a) {
+        var seen = a.last_sign_in_at ? 'เข้าล่าสุด ' + new Date(a.last_sign_in_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }) : 'ยังไม่เคยเข้า';
+        h += '<div class="arow"><div class="who"><b>' + esc(a.email) + '</b><span>' + (a.me ? 'คุณ · ' : '') + seen + '</span></div>';
+        if (!a.me) h += '<div class="acts"><button class="btn xs" data-act="admin-reset" data-id="' + esc(a.id) + '">ตั้งรหัสใหม่</button>' +
+          '<button class="btn xs' + (ui.confirm === 'adm' + a.id ? ' danger' : '') + '" data-act="admin-remove" data-id="' + esc(a.id) + '">' + (ui.confirm === 'adm' + a.id ? 'กดอีกครั้งเพื่อยืนยัน' : 'ถอดสิทธิ์') + '</button></div>';
+        h += '</div>';
+        if (ui.resetId === a.id) h += '<form class="mmr-edit" id="adminResetForm" data-id="' + esc(a.id) + '" autocomplete="off"><input class="field" id="admResetPw" type="text" minlength="8" placeholder="รหัสผ่านใหม่ อย่างน้อย 8 ตัว" aria-label="รหัสผ่านใหม่ของ ' + esc(a.email) + '" required><button class="btn primary" type="submit">ตั้ง</button><button class="btn" type="button" data-act="admin-reset-cancel">ยกเลิก</button></form>';
+      });
+      h += '</div><form class="add" id="adminAddForm" autocomplete="off"><b class="small">เพิ่มผู้ดูแล</b>' +
+        '<input class="field" id="admEmail" type="email" inputmode="email" placeholder="อีเมล" aria-label="อีเมลผู้ดูแลใหม่" required>' +
+        '<input class="field" id="admPw" type="text" minlength="8" placeholder="รหัสผ่านเริ่มต้น อย่างน้อย 8 ตัว" aria-label="รหัสผ่านเริ่มต้น">' +
+        '<button class="btn primary" type="submit">' + ic('plus') + 'เพิ่มผู้ดูแล</button>' +
+        '<p class="muted small">ระบบไม่ส่งอีเมล ให้บอกอีเมลและรหัสนี้กับผู้ดูแลใหม่เอง แล้วให้เขาเปลี่ยนรหัสที่ ตั้งค่า > บัญชี ถ้าอีเมลนี้มีบัญชีอยู่แล้ว ไม่ต้องใส่รหัส</p></form>';
+    }
+    return h + '</div>';
+  }
+
+  /* ---------- theme: per device, auto follows the system ---------- */
+  function themePref() { try { return localStorage.getItem('bmm-theme') || 'auto'; } catch (e) { return 'auto'; } }
+  function setTheme(v) {
+    try { if (v === 'auto') localStorage.removeItem('bmm-theme'); else localStorage.setItem('bmm-theme', v); } catch (e) { }
+    if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
+  }
+
   /* ---------- views ---------- */
   function teamHtml(c, ci, s, map, RT, st, p) {
     var t = c.t[s], cls = s ? 'tb' : 'ta', state = c.w == null ? '' : (c.w === s ? ' win' : ' lose');
@@ -250,7 +330,8 @@
     var avg = Math.round(((RT.R[t[0]] || 1500) + (RT.R[t[1]] || 1500)) / 2);
     var pct = Math.round((s ? 1 - p : p) * 100);
     return '<div class="team ' + cls + state + '"><span class="tlabel">ทีม ' + (s ? 'B' : 'A') + '</span>' + names +
-      '<span class="tmeta" title="MMR เฉลี่ยของทีม และโอกาสชนะ">เฉลี่ย ' + avg + ' · ' + pct + '%</span></div>';
+      '<span class="tmeta" title="MMR เฉลี่ยของทีม และโอกาสชนะ">เฉลี่ย ' + avg + ' · ' + pct + '%</span>' +
+      '<button class="won' + (c.w === s ? ' on' : '') + '" data-act="win" data-ci="' + ci + '" data-s="' + s + '" aria-pressed="' + (c.w === s) + '">' + ic('check') + (c.w === s ? 'ชนะ' : 'ทีมนี้ชนะ') + '</button></div>';
   }
   function courtHtml(c, ci, map, RT, st, free, next) {
     var mode = S.courts[ci].mode;
@@ -270,10 +351,7 @@
     var p = A.winProb(RT.R, c.t);
     var h = '<section class="court">' + head;
     if (stale) h += '<div class="note">มีคนในสนามนี้ปิดสถานะเล่นแล้ว แตะชื่อเพื่อสลับกับคนในคิว หรือกดสุ่มใหม่</div>';
-    h += '<div class="match' + (A.hasRes(c) ? ' picked' : '') + '">' + teamHtml(c, ci, 0, map, RT, st, p) + '<div class="vs"><span>VS</span></div>' + teamHtml(c, ci, 1, map, RT, st, p) + '</div>';
-    h += '<div class="court-actions">' + [0, 1].map(function (s) {
-      return '<button class="won' + (c.w === s ? ' on' : '') + '" data-act="win" data-ci="' + ci + '" data-s="' + s + '" aria-pressed="' + (c.w === s) + '">' + (c.w === s ? ic('check') : '') + 'ทีม ' + (s ? 'B' : 'A') + ' ชนะ</button>';
-    }).join('') + '</div>';
+    h += '<div class="match' + (A.hasRes(c) ? ' picked' : '') + '">' + teamHtml(c, ci, 0, map, RT, st, p) + '<div class="vs" aria-hidden="true"><span>VS</span></div>' + teamHtml(c, ci, 1, map, RT, st, p) + '</div>';
     if (A.hasRes(c) && !stale) {
       var wn = c.t[c.w].map(function (id) { return map[id] ? esc(map[id].name) : '-'; }).join(' + ');
       h += '<div class="court-actions one"><button class="btn primary big" data-act="save" data-ci="' + ci + '">' + ic('check') + 'บันทึกผล: ' + wn + ' ชนะ</button></div>';
@@ -324,11 +402,20 @@
     return h + '</div></aside></div>';
   }
   function memberRow(p, st, RT, on) {
+    if (ui.editPlayer === p.id) return playerEditor(p, RT);
     var canDel = ui.editMembers && st.played[p.id] === 0 && !on[p.id];
     return '<div class="row' + (p.active ? '' : ' off') + '"><span class="av lv-' + (p.level || 'I') + '" aria-hidden="true">' + esc(initial(p.name)) + '</span><div class="who"><b>' + esc(p.name) + '</b><span>' + (p.active ? 'เล่น ' + st.played[p.id] + ' · ' : '') + 'MMR ' + Math.round(RT.R[p.id]) + '</span></div>' +
       '<select class="lvl" data-act="level" data-id="' + p.id + '" aria-label="ระดับของ ' + esc(p.name) + '">' + ['N', 'I', 'A'].map(function (l) { return '<option value="' + l + '"' + ((p.level || 'I') === l ? ' selected' : '') + '>' + LV_LABEL[l] + '</option>'; }).join('') + '</select>' +
       '<label class="sw"><input type="checkbox" data-act="toggle" data-id="' + p.id + '"' + (p.active ? ' checked' : '') + ' aria-label="มาวันนี้ ' + esc(p.name) + '"><span class="track"></span></label>' +
-      (canDel ? '<button class="icon danger-ico" data-act="remove" data-id="' + p.id + '" aria-label="ลบ ' + esc(p.name) + ' ออกจากสมาชิก">' + ic('trash') + '</button>' : '<span></span>') + '</div>';
+      (canDel ? '<button class="icon danger-ico" data-act="remove" data-id="' + p.id + '" aria-label="ลบ ' + esc(p.name) + ' ออกจากสมาชิก">' + ic('trash') + '</button>'
+        : ui.editMembers ? '<span class="icon"></span>' : '<button class="icon" data-act="edit-player" data-id="' + p.id + '" aria-label="แก้ชื่อหรือ MMR ของ ' + esc(p.name) + '">' + ic('pencil') + '</button>') + '</div>';
+  }
+  function playerEditor(p, RT) {
+    return '<form class="row editrow" id="playerForm" data-id="' + p.id + '" autocomplete="off">' +
+      '<span class="av lv-' + (p.level || 'I') + '" aria-hidden="true">' + esc(initial(p.name)) + '</span>' +
+      '<label class="small">ชื่อ<input class="field" id="pName" value="' + esc(p.name) + '" maxlength="40" required></label>' +
+      '<label class="small">MMR<input class="field" id="pMmr" type="number" inputmode="numeric" min="0" max="5000" step="1" value="' + Math.round(RT.R[p.id]) + '"></label>' +
+      '<div class="acts"><button class="btn sm primary" type="submit">' + ic('check') + 'บันทึก</button><button class="btn sm" type="button" data-act="edit-player-cancel">ยกเลิก</button></div></form>';
   }
   function initial(n) { return (String(n).replace(/^[\s\u0E40-\u0E44]+/, '').charAt(0) || '?').toUpperCase(); }
   function viewPeople() {
@@ -449,6 +536,9 @@
     h += '<div class="card"><details><summary>ขั้นสูง: ความยืดหยุ่นของคิว (ตอนนี้ ' + (S.flex || 0) + ')' + ic('chev') + '</summary><div class="line" style="margin-top:8px"><span class="muted small">สนามแข่งขันและสังสรรค์เลือกจากคิวเพิ่มได้อีกกี่คน</span>' +
       '<div class="seg" role="group" aria-label="ความยืดหยุ่นของคิว">' + [0, 2, 4, 6].map(function (n) { return '<button class="' + ((S.flex || 0) === n ? 'on' : '') + '" data-act="flex" data-n="' + n + '" aria-pressed="' + ((S.flex || 0) === n) + '">' + n + '</button>'; }).join('') + '</div></div>' +
       '<p class="muted small">0 = ตามคิวเป๊ะ · ยิ่งมาก ระดับยิ่งใกล้ แต่บางคนอาจรอนานขึ้นนิดหน่อย คนที่เล่นน้อยกว่ายังได้ก่อนเสมอ</p></details></div>';
+    var tp = themePref();
+    h += '<div class="card"><div class="line"><div><h2>สีของแอป</h2><span class="muted small">อัตโนมัติ = ตามที่ตั้งในเครื่อง</span></div><div class="seg" role="group" aria-label="สีของแอป">' +
+      [['auto', 'อัตโนมัติ'], ['light', 'สว่าง'], ['dark', 'มืด']].map(function (o) { return '<button class="' + (tp === o[0] ? 'on' : '') + '" data-act="theme" data-v="' + o[0] + '" aria-pressed="' + (tp === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div></div>';
     h += '<div class="card"><div class="line"><div><h2>โหมดจอใหญ่</h2><span class="muted small">ตัวใหญ่ ซ่อนปุ่ม ไว้วางโชว์ข้างสนาม</span></div><label class="sw"><input type="checkbox" data-act="boardsw"' + (S.board ? ' checked' : '') + ' aria-label="โหมดจอใหญ่"><span class="track"></span></label></div></div>';
     h += '<div class="card"><h2 class="big">จบคืน</h2>' +
       '<button class="btn' + (ui.confirm === 'end' ? ' danger' : ' primary') + '" data-act="end">' + ic('flag') + (ui.confirm === 'end' ? 'กดอีกครั้งเพื่อจบเกมวันนี้' : 'จบเกมวันนี้และเก็บสถิติ') + '</button>' +
@@ -465,6 +555,7 @@
       '<div class="line"><button class="btn sm" type="button" data-act="gentoken">สร้างรหัสใหม่</button><button class="btn sm" type="button" data-act="copytoken">คัดลอกรหัส</button></div><button class="btn sm primary" type="submit">บันทึกและส่งทดสอบ</button></form>' +
       (pending ? '<button class="btn" data-act="flushsheet">' + ic('cloud') + 'ส่งรายงานที่ค้าง (' + pending + ')</button>' : '') + '</details></div>';
     h += '<div class="card"><div class="line"><div><h2>ดาวน์โหลดข้อมูลทั้งหมด</h2><span class="muted small">ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์ เก็บไว้เป็นสำเนา</span></div><button class="btn" data-act="export">' + ic('save') + 'ดาวน์โหลด</button></div></div>';
+    h += adminsCard();
     h += '<div class="card"><div class="line"><div><h2>บัญชี</h2><span class="muted small">' + esc(ui.user && ui.user.email || '') + '</span></div><button class="btn" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
       '<form id="pwForm" class="add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn" type="submit">เปลี่ยนรหัสผ่าน</button></form></div>';
     return h;
@@ -713,7 +804,7 @@
     if (!S) return;
     var ci = +t.dataset.ci, before = JSON.stringify(S), msg = null, snap = before;
     if (a !== 'undo' && a !== 'tab') ui.toast = null;
-    if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; ui.editMembers = false; try { window.scrollTo(0, 0); } catch (x) { } }
+    if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; ui.editMembers = false; ui.editPlayer = null; ui.resetId = null; try { window.scrollTo(0, 0); } catch (x) { } }
     else if (a === 'sync') { if (sync.dirty) runSync(); }
     else if (a === 'board') { S.board = !S.board; ui.sel = null; }
     else if (a === 'undo') {
@@ -754,7 +845,8 @@
       else if (ui.sel.id != null && pos.id != null) ui.sel = pos;
       else {
         var n1 = selName();
-        if (A.swapPos(S, ui.sel, pos)) { var n2 = byId()[pos.id != null ? pos.id : S.live[pos.ci].t[pos.s][pos.i]]; msg = 'สลับ ' + n1 + ' กับ ' + (n2 ? n2.name : '') + ' แล้ว'; }
+        var n2 = byId()[pos.id != null ? pos.id : S.live[pos.ci].t[pos.s][pos.i]];
+        if (A.swapPos(S, ui.sel, pos)) msg = 'สลับ ' + n1 + ' กับ ' + (n2 ? n2.name : '') + ' แล้ว';
         ui.sel = null;
       }
     }
@@ -765,6 +857,13 @@
     else if (a === 'remove') { removePlayer(+t.dataset.id); return; }
     else if (a === 'editmembers') { ui.editMembers = !ui.editMembers; }
     else if (a === 'edit-mmr') ui.editId = +t.dataset.id;
+    else if (a === 'edit-player') ui.editPlayer = +t.dataset.id;
+    else if (a === 'edit-player-cancel') ui.editPlayer = null;
+    else if (a === 'theme') { setTheme(t.dataset.v); }
+    else if (a === 'admin-reset') { ui.resetId = t.dataset.id; }
+    else if (a === 'admin-reset-cancel') { ui.resetId = null; }
+    else if (a === 'admin-remove') { if (confirmTap('adm' + t.dataset.id)) { adminAction({ action: 'remove', id: t.dataset.id }, 'ถอดสิทธิ์ผู้ดูแลแล้ว'); return; } }
+    else if (a === 'admins-reload') { ui.admins = null; }
     else if (a === 'edit-cancel') ui.editId = null;
     else if (a === 'rank-reset') { if (confirmTap('rank')) { S.players.forEach(function (p) { S.adj.push({ at: S.done.length, id: p.id, to: A.LV[p.level || 'I'] }); }); msg = 'รีเซ็ต MMR ตามระดับแล้ว'; } }
     else if (a === 'hflip') { var m = S.done[+t.dataset.i]; if (m) { m.w = 1 - m.w; msg = 'สลับผู้ชนะแมตช์ ' + (+t.dataset.i + 1) + ' แล้ว คิด MMR ใหม่ให้แล้ว'; } }
@@ -834,6 +933,15 @@
       try { await postReport({ test: true }, cfg); toast('เชื่อม Google Sheet สำเร็จ', null); }
       catch (err) { toast('ส่งทดสอบไม่ผ่าน: ' + errMsg(err) + ' ตรวจลิงก์ รหัส และการ deploy แบบ Anyone', null); }
       ui.busy = null; render();
+    }
+    else if (f.id === 'playerForm') { await savePlayerEdit(f); }
+    else if (f.id === 'adminAddForm') {
+      var em2 = $('admEmail').value.trim(), pw2 = $('admPw').value;
+      if (await adminAction({ action: 'add', email: em2, password: pw2 }, null)) { $('admEmail').value = ''; $('admPw').value = ''; }
+    }
+    else if (f.id === 'adminResetForm') {
+      if (await adminAction({ action: 'reset', id: f.dataset.id, password: $('admResetPw').value }, 'ตั้งรหัสผ่านใหม่ให้แล้ว แจ้งรหัสนี้ให้เจ้าของบัญชี')) ui.resetId = null;
+      render();
     }
     else if (f.id === 'mmrForm') {
       var val = parseInt($('mmrIn').value, 10);

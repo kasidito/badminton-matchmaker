@@ -53,6 +53,16 @@
       return must(await c.from('sessions').update({ title: title, played_on: playedOn, started_at: new Date().toISOString() })
         .eq('id', id).eq('status', 'open').select('*').single());
     },
+    /* other admins: list/add/remove/reset via the manage-admins edge function (needs the service role) */
+    admins: async function (body) {
+      var r = await c.functions.invoke('manage-admins', { body: body });
+      if (r.error) {
+        var m = r.error.message;
+        try { var b = await r.error.context.json(); if (b && b.error) m = b.error; } catch (e) { }
+        throw new Error(m);
+      }
+      return r.data;
+    },
     updatePlayer: async function (id, fields) {
       must(await c.from('players').update(fields).eq('id', id));
     },

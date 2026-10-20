@@ -8,7 +8,7 @@
   function fresh() {
     return {
       seq: { players: names.length, sessions: 0, matches: 0 }, auth: null,
-      admins: [{ user_id: 'u1' }],
+      admins: [{ user_id: 'u1', email: 'admin@example.com' }],
       players: names.map(function (n, i) { return { id: i + 1, name: n, level: 'I', start_mmr: 1500, career_games: 0, active: true }; }),
       sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: []
     };
@@ -112,6 +112,27 @@
       return {
         from: query,
         rpc: rpc,
+        functions: {
+          invoke: function (name, o) {
+            var b = o.body || {}, me = db.auth && db.auth.user.id;
+            var out = function () { return { admins: db.admins.map(function (a) { return { id: a.user_id, email: a.email || '', me: a.user_id === me, last_sign_in_at: null }; }) }; };
+            if (!db.admins.some(function (a) { return a.user_id === me; })) return bad('not_admin');
+            var bad = function (code) { return Promise.resolve({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context: { json: function () { return Promise.resolve({ error: code }); } } } }); };
+            if (name !== 'manage-admins' || !me) return bad('not_signed_in');
+            if (b.action === 'add') {
+              var hit = db.admins.filter(function (a) { return a.email === b.email; })[0];
+              if (!hit) { if ((b.password || '').length < 8) return bad('short_password'); db.admins.push({ user_id: 'u' + (db.admins.length + 1), email: b.email, password: b.password }); }
+            } else if (b.action === 'remove') {
+              if (b.id === me) return bad('cannot_remove_self');
+              if (db.admins.length <= 1) return bad('last_admin');
+              db.admins = db.admins.filter(function (a) { return a.user_id !== b.id; });
+            } else if (b.action === 'reset') {
+              if ((b.password || '').length < 8) return bad('short_password');
+              db.admins.forEach(function (a) { if (a.user_id === b.id) a.password = b.password; });
+            } else if (b.action !== 'list') return bad('unknown_action');
+            persist(); return Promise.resolve({ data: out(), error: null });
+          }
+        },
         auth: {
           getSession: function () { return Promise.resolve({ data: { session: db.auth } }); },
           signInWithPassword: function (c) {

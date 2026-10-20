@@ -321,6 +321,63 @@ const viewText = page => page.textContent('#view');
   check('imported past day shows in history', (await viewText(p2)).includes('14 ตุลาคม'));
   check('no script errors on import run', p2.errors.length === 0, p2.errors.join(' | '));
 
+  /* ---------- edit a member's name and MMR, admins, theme ---------- */
+  await p2.click('[data-tab=people]');
+  const firstId = await p2.$eval('[data-act=edit-player]', b => b.dataset.id);
+  const oldName = (await db(p2)).players.find(p => String(p.id) === firstId).name;
+  await p2.click(`[data-act=edit-player][data-id="${firstId}"]`);
+  await p2.fill('#pName', 'ชื่อใหม่');
+  await p2.fill('#pMmr', '1777');
+  await p2.click('#playerForm button[type=submit]');
+  await p2.waitForSelector('#playerForm', { state: 'detached' });
+  await saved(p2);
+  d = await db(p2);
+  check('rename is written to the players table', d.players.find(p => String(p.id) === firstId).name === 'ชื่อใหม่', oldName);
+  check('MMR edit from the member editor is stored as an adjustment', d.rating_adjustments.some(r => String(r.player_id) === firstId && r.to_mmr === 1777));
+  check('renamed member shows the new name and MMR', (await viewText(p2)).includes('ชื่อใหม่') && (await viewText(p2)).includes('1777'));
+  const other = d.players.find(p => String(p.id) !== firstId);
+  await p2.click(`[data-act=edit-player][data-id="${other.id}"]`);
+  await p2.fill('#pName', 'ชื่อใหม่');
+  await p2.click('#playerForm button[type=submit]');
+  await p2.waitForSelector('#toast:not([hidden])');
+  check('duplicate name is refused', (await p2.textContent('#toast')).includes('มีชื่อ') && (await db(p2)).players.find(p => p.id === other.id).name === other.name);
+  await p2.click('[data-act=edit-player-cancel]');
+
+  await p2.click('#setBtn');
+  await p2.waitForSelector('#adminAddForm');
+  check('admins card lists the signed-in admin', (await viewText(p2)).includes('admin@example.com'));
+  await p2.fill('#admEmail', 'helper@example.com');
+  await p2.fill('#admPw', 'short');
+  await p2.click('#adminAddForm button[type=submit]');
+  await p2.waitForTimeout(300);
+  check('short starting password is refused', !(await db(p2)).admins.some(a => a.email === 'helper@example.com'));
+  await p2.fill('#admEmail', 'helper@example.com');
+  await p2.fill('#admPw', 'start-pass-1');
+  await p2.click('#adminAddForm button[type=submit]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  check('new admin is added', (await db(p2)).admins.some(a => a.email === 'helper@example.com') && (await viewText(p2)).includes('helper@example.com'));
+  const helperId = (await db(p2)).admins.find(a => a.email === 'helper@example.com').user_id;
+  await p2.click(`[data-act=admin-reset][data-id="${helperId}"]`);
+  await p2.fill('#admResetPw', 'new-pass-22');
+  await p2.click('#adminResetForm button[type=submit]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  check('admin can set another admin\'s password', (await db(p2)).admins.find(a => a.user_id === helperId).password === 'new-pass-22');
+  check('own row has no remove button', (await p2.$('[data-act=admin-remove][data-id="u1"]')) === null);
+  await p2.click(`[data-act=admin-remove][data-id="${helperId}"]`);
+  await p2.click(`[data-act=admin-remove][data-id="${helperId}"]`);
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  check('removing an admin takes two taps and works', !(await db(p2)).admins.some(a => a.user_id === helperId));
+
+  await p2.click('[data-act=theme][data-v=dark]');
+  check('theme switch sets dark', (await p2.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+  await p2.reload();
+  await p2.waitForSelector('#app:not([hidden])');
+  check('theme choice survives a reload', (await p2.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+  await p2.click('#setBtn');
+  await p2.click('[data-act=theme][data-v=auto]');
+  check('auto theme removes the override', (await p2.evaluate(() => document.documentElement.dataset.theme)) === undefined);
+  check('no script errors in edit/admin/theme run', p2.errors.length === 0, p2.errors.join(' | '));
+
   /* ---------- a signed-in user who is not an admin ---------- */
   const p3 = await newPage(browser, base, 390, 844);
   await p3.evaluate(() => { localStorage.clear(); });

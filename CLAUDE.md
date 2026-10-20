@@ -56,7 +56,9 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 - Adding or removing members needs to be online (inserts need DB ids). Level changes are also written straight to `players` so they stick before a night is open.
 - **Undo** is an in-memory stack of state snapshots (`ui.undos`, max 30), pushed by `toast(msg, snapshot)`. Undo keeps the current `sessionId`, `title` and `days`. Cleared on End day.
 - **Google Sheet report**: `buildReport()` before closing; queued in localStorage (`bmm-sheet-queue`) and posted as `text/plain` JSON to the Apps Script web app (`tools/google-sheet-report.gs`, idempotent per night id). URL and token live in localStorage (`bmm-sheet`), per device. Success sets `sessions.sheet_exported_at`.
-- **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address.
+- **Edit a member**: pencil on the member row opens name + MMR. The name is written straight to `players` (unique, needs online); the MMR becomes a normal `S.adj` edit (undoable).
+- **Other admins**: Settings → ผู้ดูแลก๊วน calls the `manage-admins` edge function (`supabase/functions/manage-admins`, deployed with verify_jwt, uses the service role and checks the caller is in `admins`). Actions: list, add (creates the auth user with a starting password, no email), remove (not self, not the last), reset another admin's password. `tests/fake-supabase.js` mirrors it under `functions.invoke`.
+- **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address. Without custom SMTP, Supabase only emails addresses that are members of the Supabase org team, so for other admins the fallback is an admin setting a new password for them in ผู้ดูแลก๊วน.
 
 ## Database
 
@@ -79,6 +81,7 @@ When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` 
 - Colours come from CSS tokens on `:root` with dark-mode overrides. Never hard-code colours in components.
 - Layout breakpoints: 700px (tablet: courts side by side), 760px (two-column tabs), 1000px (landscape: queue side panel, one-row header, no bottom dock).
 - Rank rows use `.podium`, not `.top` (`.top` is the header).
-- Look is design C "sports club app" (chosen Oct 2026): font Prompt; light grey page, white 20px-radius cards, navy ink `--accent` with lime `--hi`; navy diagonal-stripe banners (`.strip`, `.hero`) for headline numbers. Dark mode swaps to navy surfaces with lime as the accent.
+- Look is design C "sports club app" (chosen Oct 2026): font Prompt, navy ink `--accent`, lime `--hi`. Light: pale page, white cards, navy diagonal-stripe `--banner` (`.strip`, `.hero`) and `--panel` (court) with white team cards. Dark: owner asked for **no stripes**; banners and court use soft navy gradients.
+- Theme: Settings → สีของแอป (auto / light / dark), stored per device in localStorage `bmm-theme`, applied by a tiny inline script in `<head>` as `html[data-theme]`.
 - Phone and tablet portrait: the menu (`.tabs`) is a floating pill fixed at the bottom; the courts dock sits above it. From 1000px the menu moves into the header.
-- Court card: both win buttons sit together under the teams (`.court-actions` > `.won`); สุ่มใหม่ is the `.redraw` button in the court header.
+- Court: header row (name, mode chip, time, `.redraw` สุ่มใหม่), then the `.match` panel: two `.team` cards split by the net with a lime VS; each team card has its own `.won` (ทีมนี้ชนะ) button, as in the owner's light mockup. บันทึกผล appears under the panel once a winner is picked.
