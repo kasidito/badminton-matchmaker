@@ -1,50 +1,47 @@
 # Roadmap
 
-Status as of 20 Oct 2026, 19:50. Owner decides order; update this file when something ships or changes.
+Status as of 21 Oct 2026, 00:30. Owner decides order; update this file when something ships or changes.
 
 ## Now: get to UAT
 
 | # | Task | Who | Status |
 |---|---|---|---|
-| 1 | Turn on GitHub Pages | Owner | Done |
-| 2 | Sign in on the iPad, check the layout loads correctly | Owner | Done (layout bug fixed) |
-| 2b | Supabase → Authentication → URL Configuration: Site URL + Redirect URL = the Pages address (for forgot password) | Owner | Waiting |
-| 2c | Google Sheet report | Owner | **Skipped by owner** (app + Supabase are enough; sheet `รายงานก๊วนแบด` exists in kasiditkenn@gmail.com Drive, unused) |
-| 3 | Wed 21 Oct: run the night on the old app, press "คัดลอกข้อมูลสำรอง" at the end | Owner | Waiting |
-| 4 | Import that backup into the new app (Settings → นำเข้าจากแอปเดิม) | Owner + Claude | After 3 |
-| 5 | Run `docs/UAT.md` on the iPad and report issues | Owner | After 2 |
-| 6 | Fix UAT issues | Claude | After 5 |
-| 7 | Security: run the SQL that moves `is_admin()` to a private schema; turn on leaked password protection | Owner (Claude provides SQL) | Pending |
+| 1 | Supabase → Authentication → URL Configuration: Site URL + Redirect URL = the Pages address (for forgot password) | Owner | Waiting |
+| 2 | Wed 21 Oct: run the night on the old app, press "คัดลอกข้อมูลสำรอง" at the end, then import it (Settings → ข้อมูลและขั้นสูง → นำเข้าจากแอปเดิม) | Owner | Waiting |
+| 3 | Run `docs/UAT.md` on the iPad and the phone; report issues | Owner | Waiting |
+| 4 | Add a second admin to ก๊วนแบด as a backup (forgot-password emails only reach Supabase team members) | Owner | Suggested |
+| 5 | Optional: leaked password protection (Supabase advisor; needs a paid plan) | Owner | Optional |
 
-## Next: improvements (agreed)
+## Shipped (20–21 Oct)
 
-| # | Item | Size | Notes |
+- Sporty look (design C), no stripes, light/dark/auto, app name **Budmintan**, home-screen icon
+- Courts banner: matches, play time, games per person, who sits out (tap to swap), ขอพัก (sit out one draw)
+- Bird ranks as emblems (ลูกเจี๊ยบ → ฟีนิกซ์), rank-up toast, legend on the ranking tab
+- Five starting levels and a level picker for new names
+- Edit member name and MMR; other admins (add with starting password, remove, reset password)
+- **Clubs**: players and nights per club, create/switch/rename clubs, admins per club, permissions checked in the database
+- Settings regrouped in two fixed columns
+- Tests: unit, two UI runs, seeded random long runs (`npm run explore`), database permission replay (`npm run test:db`)
+
+## Next (suggested, owner to pick)
+
+| # | Item | Size | Why |
 |---|---|---|---|
-| 1 | Backup + report to Google Sheet on End day | M | **Shipped.** Plus a download-all-data button. Weekly automatic export to GitHub not done (would need the service key as a GitHub secret). |
-| 2 | Forgot password | S | **Shipped**, plus change password. Needs Supabase Site URL set (Now 2b). |
-| 3 | Open the night at first check-in, show the night's date in the header | S | **Shipped.** |
-| 4 | Multi-step undo without a time limit; confirm before deleting a match | S | **Shipped** (header undo button, 30 steps). |
-| 5 | Show the next 4 on an empty court | S | **Shipped.** Also fixed: on-screen queue and draw now break ties the same way. |
-| 6 | **OpenSkill ratings** | M | Owner approved. Keep Elo for 4–6 weeks first, then compute both from `match_players` history and compare before switching. Show levels, not raw numbers, to avoid new players feeling penalised. |
-
-## Sporty UI: design C shipped (20 Oct 2026)
-
-Mockups (Design canvas "จัดคู่ก๊วนแบด – แนวดีไซน์สปอร์ต", https://claude.ai/artifact/6TWuPZ4ijtdiV9StU5VAwM):
-- **A · Scoreboard** — dark, shuttle-yellow accent, Chakra Petch, teams as scoreboard rows, A/B win buttons together, LIVE strip, podium ranking, iPad 3 courts in one row.
-- **C · Sports club app** — light, navy + lime, Prompt, VS circle, diagonal-stripe summary, pill bottom nav.
-- Both move the phone menu to the bottom and put both "win" buttons together.
-Owner picked **C**. Shipped: tokens, Prompt font, bottom pill menu, stripe banners, VS circle, win buttons together, #1 hero on the ranking, avatars on member rows. Fonts must support Thai (Chakra Petch, Prompt, Kanit, Noto Sans Thai).
+| 1 | Name matching on check-in: "ใช่คนเดิมไหม" for near-identical names, remember nicknames | S | LINE posts spell names differently; avoids duplicate members |
+| 2 | Copy tonight's summary to LINE (ranking, games per person, rank-ups) | S | Players see results without logging in |
+| 3 | In-app stats: all-time table, MMR chart per player, best partner, attendance | M | Replaces the Google Sheet idea |
+| 4 | Court timer alert (court over 20 min) and "สนามนี้นานสุด" on the banner | S | Fairness on busy nights |
+| 5 | Leave a club / delete an empty club | S | Clean-up after testing clubs |
+| 6 | Email sending through a free SMTP (e.g. Resend) for forgot password and new-admin invites | M | Today emails only reach Supabase team members |
+| 7 | OpenSkill ratings: compute from `match_players` history after 4–6 weeks, compare with Elo | M | Owner approved, waiting for data |
+| 8 | Remove Google Sheet code (owner skipped it) | S | Less to maintain |
+| 9 | Offline queue for adding members (today needs internet) | M | Bad wifi at the court |
 
 ## Later / ideas
 
-- In-app stats dashboard (instead of Google Sheet): all-time table, per-player MMR chart, best partner, attendance
-
-- Copy tonight's summary to LINE (ranking, matches per person, results)
 - Optional score entry (e.g. 21–15) feeding MMR margin
-- Player stats: MMR chart, best partner, head-to-head, attendance
 - Pair rules: always together / never together
-- Rest this round / leaving at a set time
-- Court timer alert (over 20 minutes)
-- Monthly or seasonal leaderboards
+- Leaving at a set time
+- Monthly or seasonal leaderboards (season reset toward 1500, best rank of the season)
 - Read-only link for players (only if the admin-only rule changes)
 - Cost split (court + shuttles), paid checkbox. **On hold by owner's decision, 20 Oct 2026.**
