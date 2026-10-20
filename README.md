@@ -89,6 +89,4 @@ npm run e2e           # both UI runs against the fake Supabase (needs Playwright
 
 ## Roadmap
 
-- Google Sheet report appended on End day
-- Rating system upgrade to OpenSkill, recalculated from stored history
-- Cost split (court and shuttlecocks)
+See [docs/ROADMAP.md](docs/ROADMAP.md).
