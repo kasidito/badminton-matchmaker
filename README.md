@@ -68,7 +68,9 @@ Repository → Settings → Pages → Deploy from a branch → `main` / root. Th
 
 ```bash
 npm test              # unit tests for js/algo.js (Node 18+)
-npm run smoke         # full UI run against the fake Supabase (needs Playwright + Chromium)
+npm run e2e           # both UI runs against the fake Supabase (needs Playwright + Chromium)
+                      #   tests/smoke.js  main evening on iPad landscape
+                      #   tests/flows.js  phone width, undo, reset, import, late arrival, non-admin
 ```
 
 ## Data model

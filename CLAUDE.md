@@ -65,7 +65,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 
 ```bash
 npm test          # node --test tests/algo.test.js
-npm run smoke     # Playwright run of the full UI against tests/fake-supabase.js
+npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases) against tests/fake-supabase.js
 ```
 
 When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` to match, and add a migration file. Never edit an applied migration.
