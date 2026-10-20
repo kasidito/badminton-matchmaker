@@ -23,7 +23,8 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 
 ## MMR (Elo v2)
 
-- Start: level N 1300, I 1500, A 1700 (`players.level`, `players.start_mmr`).
+- Start levels (`players.level`, `players.start_mmr`): B เพิ่งเริ่ม 1200, N มือใหม่ 1350, I กลาง 1500, A เก่ง 1650, P โหด 1800. New names from a check-in get a level picker card on the people tab.
+- **Bird ranks** (`A.BIRDS`, computed in `ratings()` as `RT.B`): ลูกเจี๊ยบ <1275, นกกระจอก 1275, นกพิราบ 1425, เหยี่ยว 1575, อินทรี 1725, ฟีนิกซ์ 1875. Up as soon as the floor is reached, down only after falling 25 below it (`stepBird`). Each start level lands in its own bird. Saving a result toasts rank changes. Illustrations are `#b-<bird>` symbols in `index.html` (fixed colours on purpose) shown on a tinted disc (`.bird`, `--bd-*`).
 - Expectation per player: `eff = 0.75*own + 0.25*partner` against the opponent team average.
 - K = 48 for a player's first 10 career matches (`career_games`), then 24. Social courts x0.5.
 - Ratings are always **recomputed by replaying tonight's matches** from `start` plus manual edits (`S.adj`, applied before match index `at`). Never store a running rating in state. Editing or deleting a past match must just change `S.done`.
@@ -79,7 +80,8 @@ When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` 
 ## Style
 
 - Colours come from CSS tokens on `:root` with dark-mode overrides. Never hard-code colours in components.
-- Layout breakpoints: 700px (tablet: courts side by side), 760px (two-column tabs), 1000px (landscape: queue side panel, one-row header, no bottom dock).
+- Layout breakpoints: 700px (tablet: courts side by side, banner facts in one row), 760px (two-column tabs), 1000px (landscape: one-row header, no bottom dock).
+- Courts tab banner (`.board`): matches done, play time, games per person (fairness), here tonight, then **พักตานี้** chips = the queue in order (first 4 tagged ลงต่อ; tap to swap). There is no separate queue panel any more.
 - Rank rows use `.podium`, not `.top` (`.top` is the header).
 - Look is design C "sports club app" (chosen Oct 2026): font Prompt, navy ink `--accent`, lime `--hi`. Light: pale page, white cards, navy diagonal-stripe `--banner` (`.strip`, `.hero`) and `--panel` (court) with white team cards. Dark: owner asked for **no stripes**; banners and court use soft navy gradients.
 - Theme: Settings → สีของแอป (auto / light / dark), stored per device in localStorage `bmm-theme`, applied by a tiny inline script in `<head>` as `html[data-theme]`.

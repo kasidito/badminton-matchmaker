@@ -57,7 +57,7 @@ const viewText = page => page.textContent('#view');
   await page.selectOption('select[data-id="10"]', 'N');
   await saved(page);
   let d = await db(page);
-  check('level changes saved to players', d.players.find(p => p.id === 2).level === 'A' && d.players.find(p => p.id === 10).start_mmr === 1300);
+  check('level changes saved to players', d.players.find(p => p.id === 2).level === 'A' && d.players.find(p => p.id === 10).start_mmr === 1350);
 
   check('delete buttons are hidden until "ลบสมาชิก" is pressed', (await page.$('[data-act=remove]')) === null);
   await page.click('[data-act=editmembers]');
@@ -79,7 +79,7 @@ const viewText = page => page.textContent('#view');
 
   // fill, then undo
   await page.click('#dock [data-act=fill]');
-  check('fill draws 2 courts and leaves 2 in the queue', (await page.$$('.match')).length === 2 && (await page.$$('.qi')).length === 2);
+  check('fill draws 2 courts and leaves 2 in the queue', (await page.$$('.match')).length === 2 && (await page.$$('.chip')).length === 2);
   check('courts screen fits on a phone', await noSideScroll(page));
   await page.click('#toast [data-act=undo]');
   check('undo fill empties the courts again', (await page.$$('.match')).length === 0);
@@ -97,7 +97,7 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-act=save][data-ci="0"]');
 
   // check a player out who is on court -> stale court
-  const onCourt = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => el.childNodes[0].textContent);
+  const onCourt = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => [...el.childNodes].find(n => n.nodeType === 3).textContent);
   await page.click('[data-tab=people]');
   const rowSwitch = await page.$$eval('.row', (rows, name) => { const r = rows.find(x => x.querySelector('.who b').textContent === name); return r ? r.querySelector('input[data-act=toggle]').dataset.id : null; }, onCourt.replace(/MMR.*$/, ''));
   await page.uncheck(`input[data-act=toggle][data-id="${rowSwitch}"]`, { force: true });
@@ -170,7 +170,7 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-act=reset]');
   await saved(page);
   d = await db(page);
-  check('reset clears tonight and puts MMR back to levels', d.matches.filter(m => m.session_id === d.sessions.find(s => s.status === 'open').id).length === 0 && d.players.find(p => p.id === 2).start_mmr === 1700);
+  check('reset clears tonight and puts MMR back to levels', d.matches.filter(m => m.session_id === d.sessions.find(s => s.status === 'open').id).length === 0 && d.players.find(p => p.id === 2).start_mmr === 1650);
   check('no script errors on phone run', page.errors.length === 0, page.errors.join(' | '));
 
   /* ---------- new in this release ---------- */
@@ -196,7 +196,7 @@ const viewText = page => page.textContent('#view');
   check('only the first empty court promises names', (await p4.$$('.slot .next')).length === 1 && (await p4.textContent('#view')).includes('คิวต่อจากสนาม 1'));
   await p4.click('[data-act=draw][data-ci="0"]');
   const firstFour = hint.replace('ถัดไป', '').split(/,\s*/).map(x => x.trim().replace(/โหมดนี้.*$/, '')).filter(Boolean);
-  const court1 = await p4.$$eval('[data-ci="0"].pl', els => els.map(e => e.childNodes[0].textContent));
+  const court1 = await p4.$$eval('[data-ci="0"].pl', els => els.map(e => [...e.childNodes].find(n => n.nodeType === 3).textContent));
   check('the hinted players are exactly the ones drawn onto court 1', firstFour.length === 4 && firstFour.every(n => court1.includes(n)), JSON.stringify({ firstFour, court1 }));
   await p4.click('.fill-inline');
 

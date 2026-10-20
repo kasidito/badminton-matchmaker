@@ -126,7 +126,7 @@ test('reset puts everyone back to their level rating', () => {
   const T = session(6, ['normal'], 0, ['N', 'I', 'A']);
   T.players.forEach(p => { p.start = 1600; p.games = 12; });
   A.resetGame(T);
-  assert.deepStrictEqual(T.players.map(p => p.start), [1300, 1500, 1700, 1300, 1500, 1700]);
+  assert.deepStrictEqual(T.players.map(p => p.start), [1350, 1500, 1650, 1350, 1500, 1650]);
   assert.ok(T.players.every(p => p.games === 0));
 });
 
@@ -140,4 +140,16 @@ test('reads the number of courts from a LINE post', () => {
   assert.strictEqual(A.parseCourts('พุธ 21 ตค 20:00 - 22:00  3 สนาม\n1. ชิน'), 3);
   assert.strictEqual(A.parseCourts('ศุกร์ 2สนาม'), 2);
   assert.strictEqual(A.parseCourts('1. ชิน\n2. ตาล'), null);
+});
+
+test('bird ranks: promote at the floor, drop only after falling 25 below it', () => {
+  assert.strictEqual(A.BIRDS[A.birdIndex(1200)].k, 'chick');
+  assert.strictEqual(A.BIRDS[A.birdIndex(1500)].k, 'pigeon');
+  assert.strictEqual(A.BIRDS[A.birdIndex(1900)].k, 'phoenix');
+  const hawk = A.birdIndex(1575);
+  assert.strictEqual(A.stepBird(A.birdIndex(1570), 1576), hawk);   // up straight away
+  assert.strictEqual(A.stepBird(hawk, 1560), hawk);                 // 15 below the floor: still a hawk
+  assert.strictEqual(A.stepBird(hawk, 1549), A.birdIndex(1549));    // 26 below: drops
+  // every starting level lands in its own bird
+  assert.deepStrictEqual(['B', 'N', 'I', 'A', 'P'].map(l => A.BIRDS[A.birdIndex(A.LV[l])].k), ['chick', 'sparrow', 'pigeon', 'hawk', 'eagle']);
 });

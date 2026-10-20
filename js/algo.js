@@ -3,7 +3,17 @@
 (function (root) {
   'use strict';
 
-  var LV = { N: 1300, I: 1500, A: 1700 };           // starting MMR per level
+  var LV = { B: 1200, N: 1350, I: 1500, A: 1650, P: 1800 };   // starting MMR per level
+  /* bird ranks by MMR. A rank goes up as soon as the floor is reached, and only drops after falling DROP below it,
+     so someone sitting on the edge does not flip every match. */
+  var BIRDS = [
+    { k: 'chick', name: 'ลูกเจี๊ยบ', min: -Infinity }, { k: 'sparrow', name: 'นกกระจอก', min: 1275 },
+    { k: 'pigeon', name: 'นกพิราบ', min: 1425 }, { k: 'hawk', name: 'เหยี่ยว', min: 1575 },
+    { k: 'eagle', name: 'อินทรี', min: 1725 }, { k: 'phoenix', name: 'ฟีนิกซ์', min: 1875 }
+  ];
+  var DROP = 25;
+  function birdIndex(r) { var i = 0; for (var j = 1; j < BIRDS.length; j++) if (r >= BIRDS[j].min) i = j; return i; }
+  function stepBird(cur, r) { var n = birdIndex(r); return n > cur || r < BIRDS[cur].min - DROP ? n : cur; }
   var MODE_W = { competitive: 1, normal: 1, social: 0.5 }; // rating weight per court mode
 
   function keyOf(a, b) { return a < b ? a + '-' + b : b + '-' + a; }
@@ -34,9 +44,9 @@
      adj = manual edits [{at: matchIndex, id, to}] applied before that match is replayed.
      trail (optional array) receives {before:{id:r}, after:{id:r}} per match index. */
   function ratings(done, players, adj, trail) {
-    var R = {}, G = {}, W = {}, C = {};
-    players.forEach(function (p) { R[p.id] = startOf(p); G[p.id] = 0; W[p.id] = 0; C[p.id] = p.games || 0; });
-    function applyAdj(k) { (adj || []).forEach(function (a) { if (a.at === k && (a.id in R)) R[a.id] = a.to; }); }
+    var R = {}, G = {}, W = {}, C = {}, B = {};
+    players.forEach(function (p) { R[p.id] = startOf(p); G[p.id] = 0; W[p.id] = 0; C[p.id] = p.games || 0; B[p.id] = birdIndex(R[p.id]); });
+    function applyAdj(k) { (adj || []).forEach(function (a) { if (a.at === k && (a.id in R)) { R[a.id] = a.to; B[a.id] = birdIndex(a.to); } }); }
     for (var i = 0; i < done.length; i++) {
       applyAdj(i);
       var m = done[i], ids = m.t[0].concat(m.t[1]), ok = true;
@@ -55,12 +65,12 @@
           d[id] = k * mult * (won - e);
         });
       });
-      ids.forEach(function (id) { R[id] += d[id]; G[id]++; C[id]++; });
+      ids.forEach(function (id) { R[id] += d[id]; G[id]++; C[id]++; B[id] = stepBird(B[id], R[id]); });
       m.t[m.w].forEach(function (id) { W[id]++; });
       if (trail) { var after = {}; ids.forEach(function (id) { after[id] = R[id]; }); trail[i] = { before: before, after: after }; }
     }
     applyAdj(done.length);
-    return { R: R, G: G, W: W, C: C };
+    return { R: R, G: G, W: W, C: C, B: B };
   }
   function winProb(R, t) {
     var a = (R[t[0][0]] + R[t[0][1]]) / 2, b = (R[t[1][0]] + R[t[1][1]]) / 2;
@@ -267,7 +277,7 @@
   }
 
   var Algo = {
-    LV: LV, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP,
+    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP,
     stats: stats, ratings: ratings, winProb: winProb, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,

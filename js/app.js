@@ -4,7 +4,10 @@
   var A = window.Algo;
   var MODE_LABEL = { normal: 'ปกติ', competitive: 'แข่งขัน', social: 'สังสรรค์' };
   var MODE_ORDER = ['normal', 'competitive', 'social'];
-  var LV_LABEL = { N: 'มือใหม่', I: 'กลาง', A: 'เก่ง' };
+  var LV_LABEL = { B: 'เพิ่งเริ่ม', N: 'มือใหม่', I: 'กลาง', A: 'เก่ง', P: 'โหด' };
+  var LV_ORDER = ['B', 'N', 'I', 'A', 'P'];
+  var LV_HINT = { B: 'ตีโต้ได้ไม่กี่ลูก เสิร์ฟยังพลาด', N: 'เล่นเป็นเกมได้ แต่พลาดบ่อย', I: 'คุมลูกได้ ยืนตำแหน่งคู่ถูก', A: 'ตบหนัก เล่นเกมรุกได้', P: 'เคยแข่งหรือเคยติดทีม' };
+  var BIRD_HINT = { chick: 'เพิ่งฟักออกจากไข่', sparrow: 'เริ่มบินได้ ตีโต้เป็นเกม', pigeon: 'บินคล่อง เล่นได้ทุกตำแหน่ง', hawk: 'สายรุก ตบแรง', eagle: 'เจ้าเวหา คุมเกมได้', phoenix: 'ตำนานของก๊วน' };
 
   var S = null;   // the session being run (shape documented in CLAUDE.md)
   var ui = { tab: 'play', sel: null, confirm: null, ct: null, editId: null, toast: null, tt: null, user: null, busy: null, status: 'saved', statusMsg: '', undos: [] };
@@ -319,13 +322,38 @@
     if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
   }
 
+  /* ---------- bird ranks ---------- */
+  function bird(i, size) {
+    var b = A.BIRDS[i] || A.BIRDS[0];
+    return '<span class="bird bd-' + b.k + (size ? ' ' + size : '') + '" role="img" aria-label="' + b.name + '" title="' + b.name + '"><svg aria-hidden="true"><use href="#b-' + b.k + '"/></svg></span>';
+  }
+  function birdRange(i) {
+    var lo = A.BIRDS[i].min, hi = i + 1 < A.BIRDS.length ? A.BIRDS[i + 1].min - 1 : null;
+    return i === 0 ? 'ต่ำกว่า ' + A.BIRDS[1].min : hi == null ? lo + ' ขึ้นไป' : lo + '–' + hi;
+  }
+  /* rank changes caused by the last saved match, for the toast */
+  function birdChanges(before, after, ids) {
+    var out = [], map = byId();
+    ids.forEach(function (id) {
+      if (before.B[id] == null || before.B[id] === after.B[id] || !map[id]) return;
+      out.push({ name: map[id].name, i: after.B[id], up: after.B[id] > before.B[id] });
+    });
+    return out;
+  }
+  function setLevel(id, lv) {
+    var p = A.findP(S, id); if (!p || !LV_LABEL[lv]) return;
+    p.level = lv; p.start = A.LV[lv];
+    // saved straight away too, so it sticks even before tonight is opened
+    DB.updatePlayer(p.id, { level: p.level, start_mmr: p.start }).catch(function () { });
+  }
+
   /* ---------- views ---------- */
   function teamHtml(c, ci, s, map, RT, st, p) {
     var t = c.t[s], cls = s ? 'tb' : 'ta', state = c.w == null ? '' : (c.w === s ? ' win' : ' lose');
     var names = t.map(function (id, i) {
       var pl = map[id], pos = { ci: ci, s: s, i: i };
       var r = Math.round(RT.R[id] || 1500);
-      return '<button class="pl' + (sameSel(pos) ? ' sel' : '') + (!pl || !pl.active ? ' gone' : '') + '" data-act="pick" data-ci="' + ci + '" data-s="' + s + '" data-i="' + i + '" aria-label="เลือก ' + (pl ? esc(pl.name) : '') + ' เพื่อสลับ">' + (pl ? esc(pl.name) : '-') + '<small>' + r + '</small></button>';
+      return '<button class="pl' + (sameSel(pos) ? ' sel' : '') + (!pl || !pl.active ? ' gone' : '') + '" data-act="pick" data-ci="' + ci + '" data-s="' + s + '" data-i="' + i + '" aria-label="เลือก ' + (pl ? esc(pl.name) : '') + ' เพื่อสลับ">' + (pl ? bird(RT.B[id], 'sm') + esc(pl.name) : '-') + '<small>' + r + '</small></button>';
     }).join('<span class="plus">+</span>');
     var avg = Math.round(((RT.R[t[0]] || 1500) + (RT.R[t[1]] || 1500)) / 2);
     var pct = Math.round((s ? 1 - p : p) * 100);
@@ -364,13 +392,40 @@
     if (free < 4) return { label: 'คนรอคิวไม่ถึง 4 คน', dis: true };
     return { label: 'สุ่มลงสนามว่าง (' + Math.min(empty, Math.floor(free / 4)) + ')', dis: false };
   }
+  /* night banner: four facts, then who is sitting out right now (tap to swap, same as the queue) */
+  function boardHtml(map, RT, st, q) {
+    var on = A.liveIds(S).length / 4, here = S.players.filter(function (p) { return p.active; });
+    var starts = S.done.map(function (m) { return m.at; }).concat(S.live.map(function (c) { return c && c.at; })).filter(Boolean);
+    var t0 = starts.length ? Math.min.apply(null, starts) : null, el = t0 ? Math.max(0, Date.now() - t0) : 0;
+    var hm = Math.floor(el / 3600000) + ':' + ('0' + Math.floor(el / 60000) % 60).slice(-2);
+    var counts = here.map(function (p) { return st.played[p.id] || 0; });
+    var lo = counts.length ? Math.min.apply(null, counts) : 0, hi = counts.length ? Math.max.apply(null, counts) : 0;
+    var fair = hi - lo <= 1;
+    var clock = function (ms) { var d = new Date(ms); return d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); };
+    var h = '<section class="board" aria-label="สรุปคืนนี้"><svg class="wm" aria-hidden="true"><use href="#i-shuttle"/></svg><div class="facts4">' +
+      '<div class="fact"><span>แมตช์ที่จบ</span><b id="doneCount">' + S.done.length + '</b><small>กำลังเล่น ' + on + '/' + S.courts.length + ' สนาม</small></div>' +
+      '<div class="fact"><span>เวลาเล่น</span><b>' + (t0 ? hm : '–') + '</b><small>' + (t0 ? 'เริ่ม ' + clock(t0) + ' น.' : 'ยังไม่เริ่ม') + '</small></div>' +
+      '<div class="fact"><span>เกมต่อคน</span><b>' + (lo === hi ? lo : lo + '–' + hi) + '</b><small class="' + (fair ? 'ok' : 'warn') + '">' + (fair ? 'เท่ากันดี' : 'ต่างกัน ' + (hi - lo) + ' เกม') + '</small></div>' +
+      '<div class="fact"><span>มาวันนี้</span><b>' + here.length + '</b><small>สนามละ 4 · พัก ' + q.length + ' คน</small></div></div>';
+    h += '<div class="rest"><div class="rest-h"><b>พักตานี้</b><span>' + (q.length ? q.length + ' คน · แตะชื่อเพื่อสลับลงสนาม' : '') + '</span></div>';
+    if (!q.length) h += '<p class="rest-none">ไม่มีคนพัก ทุกคนอยู่ในสนาม</p>';
+    else {
+      h += '<div class="chips">';
+      q.forEach(function (x, i) {
+        var pl = map[x.id], w = mins(pl.freeSince);
+        h += '<button class="chip' + (i < 4 ? ' next' : '') + (sameSel({ id: x.id }) ? ' sel' : '') + '" data-act="pickq" data-id="' + x.id + '">' + bird(RT.B[x.id], 'sm') +
+          '<span class="cn">' + esc(pl.name) + '</span><span class="cm">' + (st.played[x.id] ? 'เล่น ' + st.played[x.id] : 'ยังไม่เล่น') + (w ? ' · ' + w + ' น.' : '') + '</span>' + (i < 4 ? '<span class="tag-next">ลงต่อ</span>' : '') + '</button>';
+      });
+      h += '</div>';
+    }
+    return h + '</div></section>';
+  }
   function viewPlay() {
     var map = byId(), RT = A.ratings(S.done, S.players, S.adj), st = A.stats(S.done, S.players);
     var q = A.queueOrder(S, null), free = A.freeCount(S), fl = fillState();
     var h = '<div class="roundhead"><h2>สนาม</h2>' +
       '<button class="btn primary fill-inline" data-act="fill"' + (fl.dis ? ' disabled' : '') + '>' + ic('shuffle') + fl.label + '</button></div>';
-    h += '<div class="strip" aria-label="สรุปคืนนี้"><div class="fact"><b id="doneCount">' + S.done.length + '</b><span>แมตช์ที่จบ</span></div>' +
-      '<div class="fact"><b>' + activeCount() + '</b><span>มาวันนี้</span></div><div class="fact"><b>' + q.length + '</b><span>รอคิว</span></div></div>';
+    h += boardHtml(map, RT, st, q);
     if (ui.sel) h += '<div class="selbar"><span>' + ic('swap') + ' เลือก <b>' + esc(selName()) + '</b> แตะคนอื่นในสนามหรือคิวเพื่อสลับ</span><button class="btn sm" data-act="unsel">ยกเลิก</button></div>';
     if (activeCount() < 4) {
       h += '<div class="card start"><h2>เริ่มคืนนี้</h2><p class="muted small">ยังเช็กอินไม่ถึง 4 คน</p>' +
@@ -388,41 +443,42 @@
       }
       h += courtHtml(c, ci, map, RT, st, free, next);
     });
-    h += '</div><aside class="side"><div class="card"><div class="line"><h2>คิว</h2><span class="muted small">แตะชื่อเพื่อสลับกับคนในสนาม</span></div>';
-    if (!q.length) h += '<span class="muted">ไม่มีคนรอ</span>';
-    else {
-      h += '<div class="qlist">';
-      q.forEach(function (x, i) {
-        if (i === 4) h += '<div class="qdiv">รอถัดไป</div>';
-        var pl = map[x.id], w = mins(pl.freeSince);
-        h += '<button class="qi' + (i < 4 ? ' next' : '') + (sameSel({ id: x.id }) ? ' sel' : '') + '" data-act="pickq" data-id="' + x.id + '"><span class="pos">' + (i + 1) + '</span><b>' + esc(pl.name) + '</b><span class="meta">' + (st.played[x.id] ? 'เล่น ' + st.played[x.id] : 'ยังไม่ได้เล่น') + (w ? ' · รอ ' + w + ' นาที' : '') + '</span></button>';
-      });
-      h += '</div>';
-    }
-    return h + '</div></aside></div>';
+    return h + '</div></div>';
   }
   function memberRow(p, st, RT, on) {
     if (ui.editPlayer === p.id) return playerEditor(p, RT);
     var canDel = ui.editMembers && st.played[p.id] === 0 && !on[p.id];
-    return '<div class="row' + (p.active ? '' : ' off') + '"><span class="av lv-' + (p.level || 'I') + '" aria-hidden="true">' + esc(initial(p.name)) + '</span><div class="who"><b>' + esc(p.name) + '</b><span>' + (p.active ? 'เล่น ' + st.played[p.id] + ' · ' : '') + 'MMR ' + Math.round(RT.R[p.id]) + '</span></div>' +
-      '<select class="lvl" data-act="level" data-id="' + p.id + '" aria-label="ระดับของ ' + esc(p.name) + '">' + ['N', 'I', 'A'].map(function (l) { return '<option value="' + l + '"' + ((p.level || 'I') === l ? ' selected' : '') + '>' + LV_LABEL[l] + '</option>'; }).join('') + '</select>' +
+    return '<div class="row' + (p.active ? '' : ' off') + '">' + bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + '</b><span>' + (p.active ? 'เล่น ' + st.played[p.id] + ' · ' : '') + 'MMR ' + Math.round(RT.R[p.id]) + '</span></div>' +
+      '<select class="lvl" data-act="level" data-id="' + p.id + '" aria-label="ระดับของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) { return '<option value="' + l + '"' + ((p.level || 'I') === l ? ' selected' : '') + '>' + LV_LABEL[l] + '</option>'; }).join('') + '</select>' +
       '<label class="sw"><input type="checkbox" data-act="toggle" data-id="' + p.id + '"' + (p.active ? ' checked' : '') + ' aria-label="มาวันนี้ ' + esc(p.name) + '"><span class="track"></span></label>' +
       (canDel ? '<button class="icon danger-ico" data-act="remove" data-id="' + p.id + '" aria-label="ลบ ' + esc(p.name) + ' ออกจากสมาชิก">' + ic('trash') + '</button>'
         : ui.editMembers ? '<span class="icon"></span>' : '<button class="icon" data-act="edit-player" data-id="' + p.id + '" aria-label="แก้ชื่อหรือ MMR ของ ' + esc(p.name) + '">' + ic('pencil') + '</button>') + '</div>';
   }
   function playerEditor(p, RT) {
     return '<form class="row editrow" id="playerForm" data-id="' + p.id + '" autocomplete="off">' +
-      '<span class="av lv-' + (p.level || 'I') + '" aria-hidden="true">' + esc(initial(p.name)) + '</span>' +
+      bird(RT.B[p.id], 'md') +
       '<label class="small">ชื่อ<input class="field" id="pName" value="' + esc(p.name) + '" maxlength="40" required></label>' +
       '<label class="small">MMR<input class="field" id="pMmr" type="number" inputmode="numeric" min="0" max="5000" step="1" value="' + Math.round(RT.R[p.id]) + '"></label>' +
       '<div class="acts"><button class="btn sm primary" type="submit">' + ic('check') + 'บันทึก</button><button class="btn sm" type="button" data-act="edit-player-cancel">ยกเลิก</button></div></form>';
   }
-  function initial(n) { return (String(n).replace(/^[\s\u0E40-\u0E44]+/, '').charAt(0) || '?').toUpperCase(); }
   function viewPeople() {
     var st = A.stats(S.done, S.players), RT = A.ratings(S.done, S.players, S.adj), on = {};
     A.liveIds(S).forEach(function (id) { on[id] = 1; });
     var here = S.players.filter(function (p) { return p.active; }), away = S.players.filter(function (p) { return !p.active; });
-    var h = '<div class="card"><h2>เช็กอินวันนี้</h2><form class="add" id="addForm" autocomplete="off">' +
+    var fresh = (ui.newIds || []).map(function (id) { return A.findP(S, id); }).filter(Boolean);
+    var h = '';
+    if (fresh.length) {
+      h += '<div class="card span newcard"><div class="line"><h2>ตั้งระดับให้คนใหม่ (' + fresh.length + ')</h2><button class="btn sm primary" data-act="new-done">' + ic('check') + 'เสร็จ</button></div>' +
+        '<p class="muted small">ระดับใช้ตั้งคะแนนเริ่มต้น หลังจากนั้นคะแนนขยับตามผลแข่ง</p>';
+      fresh.forEach(function (p) {
+        h += '<div class="newrow"><b>' + esc(p.name) + '</b><div class="lvpick" role="group" aria-label="ระดับของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) {
+          var on = (p.level || 'I') === l;
+          return '<button class="' + (on ? 'on' : '') + '" data-act="setlevel" data-id="' + p.id + '" data-lv="' + l + '" aria-pressed="' + on + '">' + bird(A.birdIndex(A.LV[l]), 'sm') + '<span>' + LV_LABEL[l] + '</span></button>';
+        }).join('') + '</div><span class="muted small">' + LV_HINT[p.level || 'I'] + '</span></div>';
+      });
+      h += '</div>';
+    }
+    h += '<div class="card"><h2>เช็กอินวันนี้</h2><form class="add" id="addForm" autocomplete="off">' +
       '<textarea id="nameIn" rows="3" placeholder="วางโพสต์ลงชื่อจากไลน์ได้ทั้งโพสต์" aria-label="รายชื่อ"></textarea>' +
       '<button class="btn primary" type="submit">' + ic('plus') + 'เช็กอิน</button>' +
       '<p class="muted small">สมาชิกเดิมถูกเช็กอิน ชื่อใหม่ถูกเพิ่มเป็นสมาชิก และตั้งจำนวนสนามจากคำว่า "3 สนาม" ให้ด้วย</p></form></div>';
@@ -435,7 +491,7 @@
     else h += '<p class="muted small">มาครบทุกคน</p>';
     away.forEach(function (p) { h += memberRow(p, st, RT, on); });
     h += '</details></div>';
-    h += '<div class="line"><span class="muted small">ระดับใช้ตั้ง MMR เริ่มต้น: มือใหม่ 1300 · กลาง 1500 · เก่ง 1700</span>' +
+    h += '<div class="line"><span class="muted small">ระดับใช้ตั้ง MMR เริ่มต้น: เพิ่งเริ่ม 1200 · มือใหม่ 1350 · กลาง 1500 · เก่ง 1650 · โหด 1800</span>' +
       '<button class="btn sm ghost" data-act="editmembers">' + (ui.editMembers ? ic('check') + 'เสร็จ' : ic('trash') + 'ลบสมาชิก') + '</button></div>';
     if (ui.editMembers) h += '<p class="note small">แตะถังขยะสีแดงเพื่อลบคนที่ยังไม่ได้เล่นคืนนี้ ประวัติเดิมยังอยู่ในระบบ</p>';
     return h;
@@ -448,7 +504,7 @@
     var top = list[0];
     if (top && ui.editId !== top.id) {
       var tg = RT.G[top.id], tw = RT.W[top.id], tr = Math.round(RT.R[top.id]);
-      h += '<section class="hero"><span class="medal">1</span><div class="who"><small>อันดับหนึ่ง</small><b>' + esc(top.name) + '</b><small>' + LV_LABEL[top.level || 'I'] + ' · ชนะ ' + tw + ' แพ้ ' + (tg - tw) + '</small></div>' +
+      h += '<section class="hero"><span class="medal-wrap">' + bird(RT.B[top.id], 'lg') + '<span class="medal">1</span></span><div class="who"><small>อันดับหนึ่ง · ' + A.BIRDS[RT.B[top.id]].name + '</small><b>' + esc(top.name) + '</b><small>ชนะ ' + tw + ' แพ้ ' + (tg - tw) + '</small></div>' +
         '<div class="score"><b>' + tr + '</b>' + deltaHtml(tr - A.startOf(top)) + '</div>' +
         '<button class="icon" data-act="edit-mmr" data-id="' + top.id + '" aria-label="แก้ MMR ของ ' + esc(top.name) + '">' + ic('pencil') + '</button></section>';
     }
@@ -462,11 +518,17 @@
         return;
       }
       h += '<div class="rk' + (i < 3 ? ' podium' : '') + '"><span class="pos">' + (i + 1) + '</span>' +
-        '<div class="who"><b>' + esc(p.name) + '</b><span>' + LV_LABEL[p.level || 'I'] + ' · ชนะ ' + w + ' แพ้ ' + (g - w) + (RT.C[p.id] < 10 ? ' · <i class="provtxt">ยังไม่นิ่ง</i>' : '') + (p.active ? '' : ' · กลับแล้ว') + '</span></div>' +
+        bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + (RT.C[p.id] < 10 ? '<span class="prov">ยังไม่นิ่ง</span>' : '') + '</b><span>' + A.BIRDS[RT.B[p.id]].name + ' · ชนะ ' + w + ' แพ้ ' + (g - w) + (p.active ? '' : ' · กลับแล้ว') + '</span></div>' +
         '<div class="score"><b>' + rt + '</b>' + deltaHtml(rt - A.startOf(p)) + '</div>' +
         '<button class="icon" data-act="edit-mmr" data-id="' + p.id + '" aria-label="แก้ MMR ของ ' + esc(p.name) + '">' + ic('pencil') + '</button></div>';
     });
     h += '</div></div>';
+    var tally = A.BIRDS.map(function () { return 0; });
+    list.forEach(function (p) { tally[RT.B[p.id]]++; });
+    h += '<div class="card span"><h2>ระดับนก</h2><p class="muted small">ขึ้นระดับทันทีที่คะแนนถึง และลดระดับเมื่อคะแนนต่ำกว่าเส้นเกิน 25 แต้ม คิดจากผลในก๊วนนี้เท่านั้น</p><div class="birds">' +
+      A.BIRDS.map(function (b, i) {
+        return '<div class="btile">' + bird(i, 'xl') + '<b>' + b.name + '</b><span class="rng">' + birdRange(i) + '</span><span class="muted small">' + BIRD_HINT[b.k] + '</span>' + (tally[i] ? '<span class="cnt">' + tally[i] + ' คน</span>' : '') + '</div>';
+      }).join('') + '</div></div>';
     h += '<button class="btn' + (ui.confirm === 'rank' ? ' danger' : '') + '" data-act="rank-reset" style="justify-self:start">' + (ui.confirm === 'rank' ? 'กดอีกครั้งเพื่อยืนยัน' : 'รีเซ็ต MMR ตามระดับ') + '</button>';
     return h;
   }
@@ -570,7 +632,8 @@
     if (!ui.toast) { el.hidden = true; el.innerHTML = ''; return; }
     el.hidden = false;
     el.classList.toggle('lift', ui.tab === 'play' && !S.board);
-    el.innerHTML = '<span>' + esc(ui.toast.msg) + '</span>' + (ui.toast.undo ? '<button data-act="undo">' + ic('undo') + 'ย้อนกลับ</button>' : '');
+    el.classList.toggle('promo', ui.toast.bird != null);
+    el.innerHTML = (ui.toast.bird != null ? bird(ui.toast.bird, 'md') : '') + '<span class="tmsg">' + esc(ui.toast.msg) + '</span>' + (ui.toast.undo ? '<button data-act="undo">' + ic('undo') + 'ย้อนกลับ</button>' : '');
   }
   function renderUndo() {
     var b = $('undoBtn'); if (!b) return;
@@ -641,6 +704,7 @@
       try {
         var row = await DB.addPlayer(n, 'I');
         S.players.push(fromRow(row, true, base)); added++;
+        ui.newIds = (ui.newIds || []).concat([row.id]);
       } catch (e) {
         if (e.code === '23505') {   // name exists but was removed earlier: bring them back
           try {
@@ -802,7 +866,7 @@
     if (a === 'forgot') { showGate(forgotHtml()); return; }
     if (a === 'tologin') { showGate(loginHtml()); return; }
     if (!S) return;
-    var ci = +t.dataset.ci, before = JSON.stringify(S), msg = null, snap = before;
+    var ci = +t.dataset.ci, before = JSON.stringify(S), msg = null, snap = before, birdToast = null;
     if (a !== 'undo' && a !== 'tab') ui.toast = null;
     if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; ui.editMembers = false; ui.editPlayer = null; ui.resetId = null; try { window.scrollTo(0, 0); } catch (x) { } }
     else if (a === 'sync') { if (sync.dirty) runSync(); }
@@ -830,7 +894,19 @@
     }
     else if (a === 'export') { downloadAll(); return; }
     else if (a === 'win') { var c = S.live[ci], s = +t.dataset.s; if (c) c.w = c.w === s ? null : s; }
-    else if (a === 'save') { if (A.saveResult(S, ci)) msg = 'บันทึกผลสนาม ' + (ci + 1) + ' แล้ว สนามว่าง รอสุ่มคู่ใหม่'; ui.sel = null; }
+    else if (a === 'save') {
+      var lc = S.live[ci], ids0 = lc ? lc.t[0].concat(lc.t[1]) : [], rb = A.ratings(S.done, S.players, S.adj);
+      if (A.saveResult(S, ci)) {
+        msg = 'บันทึกผลสนาม ' + (ci + 1) + ' แล้ว';
+        var ch = birdChanges(rb, A.ratings(S.done, S.players, S.adj), ids0);
+        if (ch.length) {
+          msg += ' · ' + ch.map(function (x) { return x.name + (x.up ? ' เลื่อนเป็น' : ' ลดเป็น') + A.BIRDS[x.i].name; }).join(' · ');
+          var upc = ch.filter(function (x) { return x.up; })[0];
+          if (upc) birdToast = upc.i;
+        } else msg += ' สนามว่าง รอสุ่มคู่ใหม่';
+      }
+      ui.sel = null;
+    }
     else if (a === 'draw') { if (A.drawCourt(S, ci, Math.random)) msg = 'สุ่มลงสนาม ' + (ci + 1) + ' แล้ว'; ui.sel = null; }
     else if (a === 'redraw') { if (A.redrawCourt(S, ci, Math.random)) msg = 'สุ่มสนาม ' + (ci + 1) + ' ใหม่แล้ว ไม่นับแมตช์'; ui.sel = null; }
     else if (a === 'fill') { var n = A.fillEmpty(S, Math.random); if (n) msg = 'สุ่มลง ' + n + ' สนามแล้ว'; ui.sel = null; }
@@ -858,6 +934,8 @@
     else if (a === 'editmembers') { ui.editMembers = !ui.editMembers; }
     else if (a === 'edit-mmr') ui.editId = +t.dataset.id;
     else if (a === 'edit-player') ui.editPlayer = +t.dataset.id;
+    else if (a === 'setlevel') { setLevel(+t.dataset.id, t.dataset.lv); }
+    else if (a === 'new-done') { ui.newIds = []; }
     else if (a === 'edit-player-cancel') ui.editPlayer = null;
     else if (a === 'theme') { setTheme(t.dataset.v); }
     else if (a === 'admin-reset') { ui.resetId = t.dataset.id; }
@@ -873,7 +951,7 @@
     }
     else if (a === 'end') { if (confirmTap('end')) { endDay(); return; } }
     else if (a === 'reset') { if (confirmTap('reset')) { A.resetGame(S); msg = 'เริ่มเกมใหม่แล้ว MMR กลับตามระดับ'; } }
-    if (msg) toast(msg, snap);
+    if (msg) { toast(msg, snap); if (birdToast != null) { ui.toast.bird = birdToast; renderToast(); } }
     if (JSON.stringify(S) !== before) changed();
     render();
   });
@@ -882,12 +960,7 @@
     var a = t.dataset.act;
     if (a === 'toggle') setActive(+t.dataset.id, t.checked);
     else if (a === 'level') {
-      var p = A.findP(S, +t.dataset.id);
-      if (p) {
-        p.level = t.value; p.start = A.LV[t.value];
-        // saved straight away too, so it sticks even before tonight is opened
-        DB.updatePlayer(p.id, { level: p.level, start_mmr: p.start }).catch(function () { });
-      }
+      setLevel(+t.dataset.id, t.value);
     }
     else if (a === 'boardsw') S.board = t.checked;
     else return;

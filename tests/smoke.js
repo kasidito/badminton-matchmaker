@@ -55,11 +55,22 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   const t1 = await page.textContent('#toast');
   check('pasting the LINE post checks in 13 and adds 1 new player', t1.includes('เช็กอิน 13') && t1.includes('เพิ่มใหม่ 1'), t1);
   check('new player is saved to the players table', (await db()).players.some(p => p.name === 'มิว'));
+  check('new players get a level picker', (await page.textContent('.newcard')).includes('มิว'));
+  const miuId = (await db()).players.find(p => p.name === 'มิว').id;
+  await page.click(`[data-act=setlevel][data-id="${miuId}"][data-lv=P]`);
+  await page.waitForTimeout(100);
+  check('picking a level saves it with its starting MMR', (await db()).players.find(p => p.id === miuId).level === 'P' && (await db()).players.find(p => p.id === miuId).start_mmr === 1800);
+  await page.click('[data-act=new-done]');
+  check('level picker closes', (await page.$('.newcard')) === null);
   await page.waitForSelector('#syncPill.saved', { timeout: 8000 });
   check('first check-in opens tonight', (await db()).sessions.filter(s => s.status === 'open').length === 1);
   check('header shows tonight\'s date', (await page.textContent('#date')).startsWith('คืน'));
 
+  await page.click('[data-tab=rank]');
+  check('bird legend shows six ranks', (await page.$$('.btile')).length === 6);
+  check('ranking rows carry a bird badge', (await page.$$('.rk .bird')).length > 5);
   await page.click('[data-tab=play]');
+  check('banner lists who sits out before the draw', (await page.$$('.chip')).length === 14);
   await page.click('.fill-inline');
   const courts = await page.$$eval('.match', els => els.length);
   check('fill draws all 3 courts', courts === 3, courts);
@@ -68,10 +79,10 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   await page.click('[data-act=save][data-ci="0"]');
   check('saving court 1 leaves it empty (no auto-draw)', await page.$('[data-act=draw][data-ci="0"]') !== null);
 
-  const courtName = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => el.childNodes[0].textContent);
-  const queueName = await page.$eval('.qi b', el => el.textContent);
+  const courtName = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => [...el.childNodes].find(n => n.nodeType === 3).textContent);
+  const queueName = await page.$eval('.chip .cn', el => el.textContent);
   await page.click('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]');
-  await page.click('.qi');
+  await page.click('.chip');
   const swapMsg = await page.textContent('#toast');
   check('swap toast names both players', swapMsg.includes('สลับ ' + courtName + ' กับ ' + queueName), swapMsg);
 
