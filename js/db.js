@@ -2,6 +2,7 @@
 (function (root) {
   'use strict';
   var c = null;
+  var club = null;   // every players/sessions query is scoped to the club picked in the app
 
   function must(res) {
     if (res.error) { var e = new Error(res.error.message || 'Database error'); e.code = res.error.code; throw e; }
@@ -23,17 +24,18 @@
     getUser: async function () { var r = await c.auth.getSession(); return r.data.session ? r.data.session.user : null; },
     signIn: async function (email, password) { return must(await c.auth.signInWithPassword({ email: email, password: password })).user; },
     signOut: async function () { await c.auth.signOut(); },
-    isAdmin: async function (uid) {
-      var rows = must(await c.from('admins').select('user_id').eq('user_id', uid).limit(1));
-      return rows.length > 0;
-    },
+    /* clubs: row level security returns only the clubs this user runs */
+    myClubs: async function () { return must(await c.from('clubs').select('id,name').order('id')); },
+    setClub: function (id) { club = id; },
+    createClub: async function (name) { return must(await c.rpc('create_club', { p_name: name })); },
+    renameClub: async function (id, name) { must(await c.from('clubs').update({ name: name }).eq('id', id)); },
 
     /* players */
     loadPlayers: async function () {
-      return must(await c.from('players').select('id,name,level,start_mmr,career_games,active').order('id'));
+      return must(await c.from('players').select('id,name,level,start_mmr,career_games,active').eq('club_id', club).order('id'));
     },
     addPlayer: async function (name, level) {
-      return must(await c.from('players').insert({ name: name, level: level || 'I' }).select('id,name,level,start_mmr,career_games,active').single());
+      return must(await c.from('players').insert({ club_id: club, name: name, level: level || 'I' }).select('id,name,level,start_mmr,career_games,active').single());
     },
     setPlayerActive: async function (id, active) {
       must(await c.from('players').update({ active: active }).eq('id', id));
@@ -41,12 +43,12 @@
 
     /* sessions */
     openSession: async function () {
-      var rows = must(await c.from('sessions').select('*').eq('status', 'open').order('started_at', { ascending: false }).limit(1));
+      var rows = must(await c.from('sessions').select('*').eq('club_id', club).eq('status', 'open').order('started_at', { ascending: false }).limit(1));
       return rows[0] || null;
     },
     createSession: async function (title, courtModes, flex) {
       return must(await c.from('sessions').insert({
-        title: title, court_count: courtModes.length, court_modes: courtModes, flex: flex
+        club_id: club, title: title, court_count: courtModes.length, court_modes: courtModes, flex: flex
       }).select('*').single());
     },
     retitleSession: async function (id, title, playedOn) {
@@ -55,7 +57,7 @@
     },
     /* other admins: list/add/remove/reset via the manage-admins edge function (needs the service role) */
     admins: async function (body) {
-      var r = await c.functions.invoke('manage-admins', { body: body });
+      var r = await c.functions.invoke('manage-admins', { body: Object.assign({ club_id: club }, body) });
       if (r.error) {
         var m = r.error.message;
         try { var b = await r.error.context.json(); if (b && b.error) m = b.error; } catch (e) { }
@@ -82,8 +84,14 @@
     /* every table, for the "download all data" backup */
     exportAll: async function () {
       var out = { exportedAt: new Date().toISOString() };
-      var tables = ['players', 'sessions', 'session_players', 'matches', 'match_players', 'rating_adjustments'];
-      for (var i = 0; i < tables.length; i++) out[tables[i]] = must(await c.from(tables[i]).select('*'));
+      out.club = must(await c.from('clubs').select('*').eq('id', club))[0] || null;
+      out.players = must(await c.from('players').select('*').eq('club_id', club));
+      out.sessions = must(await c.from('sessions').select('*').eq('club_id', club));
+      var sids = out.sessions.map(function (s) { return s.id; });
+      out.session_players = must(await c.from('session_players').select('*').in('session_id', sids));
+      out.matches = must(await c.from('matches').select('*').in('session_id', sids));
+      out.match_players = must(await c.from('match_players').select('*').in('match_id', out.matches.map(function (m) { return m.id; })));
+      out.rating_adjustments = must(await c.from('rating_adjustments').select('*').in('session_id', sids));
       return out;
     },
 
@@ -94,14 +102,14 @@
     /* past sessions, oldest first, in the same shape the app keeps in S.days */
     loadClosedDays: async function (limit) {
       var sess = must(await c.from('sessions').select('id,title,played_on,ended_at,state')
-        .eq('status', 'closed').order('played_on', { ascending: false }).order('id', { ascending: false }).limit(limit || 30));
+        .eq('club_id', club).eq('status', 'closed').order('played_on', { ascending: false }).order('id', { ascending: false }).limit(limit || 30));
       if (!sess.length) return [];
       var ids = sess.map(function (s) { return s.id; });
       var ms = must(await c.from('matches')
         .select('id,session_id,seq,court,mode,team_a,team_b,winner,match_players(player_id,won,rating_before,rating_after)')
         .in('session_id', ids).order('seq'));
       var names = {};
-      must(await c.from('players').select('id,name')).forEach(function (p) { names[p.id] = p.name; });
+      must(await c.from('players').select('id,name').eq('club_id', club)).forEach(function (p) { names[p.id] = p.name; });
       var nm = function (id) { return names[id] || '-'; };
       return sess.reverse().map(function (s) {
         if (s.state && s.state.importedDay) return s.state.importedDay;
@@ -129,7 +137,7 @@
     /* imports a day that was finished in the old single-page app (names only, no ratings trail) */
     importClosedDay: async function (day, idByName) {
       var s = must(await c.from('sessions').insert({
-        title: day.label + ' (นำเข้า)', status: 'closed', ended_at: iso(day.ts) || new Date().toISOString(),
+        club_id: club, title: day.label + ' (นำเข้า)', status: 'closed', ended_at: iso(day.ts) || new Date().toISOString(),
         state: { importedDay: day }
       }).select('id').single());
       for (var i = 0; i < day.matches.length; i++) {

@@ -7,9 +7,12 @@
     "test": "node --test tests/algo.test.js tests/sheet-script.test.js",
     "smoke": "node tests/smoke.js",
     "flows": "node tests/flows.js",
-    "e2e": "node tests/smoke.js && node tests/flows.js"
+    "e2e": "node tests/smoke.js && node tests/flows.js",
+    "test:db": "node tests/db/permissions.mjs",
+    "explore": "node tests/explore.js"
   },
   "devDependencies": {
-    "playwright": "^1.47.0"
+    "playwright": "^1.47.0",
+    "@electric-sql/pglite": "0.2.17"
   }
 }

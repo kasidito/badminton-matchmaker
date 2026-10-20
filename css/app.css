@@ -15,8 +15,8 @@ img{max-width:100%}
   --bg:#f3f5f9; --surface:#ffffff; --field:#f7f9fc; --fg:#0b1f44; --muted:#5b6b88; --line:#e3e8f2; --line-strong:#d3dae8; --card-line:#e6ebf3;
   --accent:#0b1f44; --accent-fg:#c6f432;
   --hi:#c6f432; --on-hi:#0b1f44;
-  --banner:repeating-linear-gradient(-45deg,#0b1f44 0 14px,#11285a 14px 28px); --on-banner:#ffffff; --on-banner-muted:#c7d2ea;
-  --panel:repeating-linear-gradient(-45deg,#0b1f44 0 14px,#11285a 14px 28px); --panel-line:transparent;
+  --banner:linear-gradient(135deg,#1a3a78 0%,#0f2756 55%,#0b1f44 100%); --on-banner:#ffffff; --on-banner-muted:#c7d2ea;
+  --panel:linear-gradient(160deg,#163370 0%,#0b1f44 100%); --panel-line:transparent;
   --team-bg:#ffffff; --team-fg:#0b1f44; --team-muted:#5b6b88; --team-line:transparent; --lose-bg:#a9b3c6;
   --net:rgba(198,244,50,.6);
   --nav-bg:#0b1f44; --nav-fg:#c7d2ea; --nav-on-bg:#c6f432; --nav-on-fg:#0b1f44; --nav-line:transparent;
@@ -26,7 +26,6 @@ img{max-width:100%}
   --knob:#ffffff; --warn-bg:#fdf1d8; --warn-fg:#6b4a05; --toast-bg:#0b1f44; --toast-fg:#ffffff; --toast-act:#c6f432;
   --shadow:0 1px 3px rgba(11,31,68,.07); --shadow-lg:0 4px 16px rgba(11,31,68,.16);
   --on-banner-fill:rgba(255,255,255,.08); --on-banner-line:rgba(255,255,255,.16); --banner-warn:#ffc24d;
-  --bd-chick:#fff4c2; --bd-sparrow:#f1e3d1; --bd-pigeon:#e3e9f2; --bd-hawk:#f8e0cc; --bd-eagle:#e7e0d9; --bd-phoenix:#ffe0d1;
   --hdr:62px; --nav:56px;
 }
 @media (prefers-color-scheme: dark){
@@ -309,15 +308,13 @@ body.board .cname{font-size:1.4rem}
 .arow .acts{display:flex;gap:6px}
 .arow + .mmr-edit{margin-bottom:8px}
 
-/* bird rank badges: sticker on a soft disc */
-.bird{display:inline-grid;place-items:center;border-radius:50%;flex:none;vertical-align:middle;width:30px;height:30px}
-.bird svg{width:86%;height:86%}
-.bird.sm{width:22px;height:22px}
+/* bird rank emblems */
+.bird{display:inline-block;line-height:0;flex:none;vertical-align:middle;width:30px;height:30px}
+.bird svg{display:block;width:100%;height:100%;overflow:visible}
+.bird.sm{width:24px;height:24px}
 .bird.md{width:34px;height:34px}
 .bird.lg{width:64px;height:64px}
 .bird.xl{width:84px;height:84px}
-.bd-chick{background:var(--bd-chick)} .bd-sparrow{background:var(--bd-sparrow)} .bd-pigeon{background:var(--bd-pigeon)}
-.bd-hawk{background:var(--bd-hawk)} .bd-eagle{background:var(--bd-eagle)} .bd-phoenix{background:var(--bd-phoenix)}
 .pl .bird{margin-right:6px;vertical-align:-5px}
 .rk .bird{justify-self:center}
 .birds{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}

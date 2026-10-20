@@ -7,9 +7,11 @@
   var names = ['ชิน', 'โฟล์ค', 'เดือน', 'นัทซ้าย', 'เปตอง', 'ป๊อป', 'Ard', 'ภู', 'กร', 'ตรัย', 'บีม', 'Yiip', 'ตั้ง'];
   function fresh() {
     return {
-      seq: { players: names.length, sessions: 0, matches: 0 }, auth: null,
-      admins: [{ user_id: 'u1', email: 'admin@example.com' }],
-      players: names.map(function (n, i) { return { id: i + 1, name: n, level: 'I', start_mmr: 1500, career_games: 0, active: true }; }),
+      seq: { players: names.length, sessions: 0, matches: 0, clubs: 1 }, auth: null,
+      users: [{ id: 'u1', email: 'admin@example.com' }],
+      clubs: [{ id: 1, name: 'ก๊วนแบด' }],
+      club_admins: [{ club_id: 1, user_id: 'u1' }],
+      players: names.map(function (n, i) { return { id: i + 1, club_id: 1, name: n, level: 'I', start_mmr: 1500, career_games: 0, active: true }; }),
       sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: []
     };
   }
@@ -39,16 +41,26 @@
     };
     function exec() {
       var rows = db[table];
+      var me = db.auth && db.auth.user.id;
+      var mine = db.club_admins.filter(function (x) { return x.user_id === me; }).map(function (x) { return x.club_id; });
+      // row level security, roughly: clubs and club-owned rows are visible only to that club's admins
+      if (table === 'clubs' || table === 'players' || table === 'sessions') {
+        var col = table === 'clubs' ? 'id' : 'club_id';
+        rows = rows.filter(function (r) { return mine.indexOf(r[col]) >= 0; });
+        if (st.op === 'insert') rows = db[table];
+      }
       if (st.op === 'insert') {
         var list = Array.isArray(st.payload) ? st.payload : [st.payload];
         var out = list.map(function (p) {
           var r = JSON.parse(JSON.stringify(p));
           if (table === 'players') {
-            if (db.players.some(function (x) { return x.name.toLowerCase() === r.name.toLowerCase(); })) fail('duplicate key value violates unique constraint "players_name_key"', '23505');
+            if (mine.indexOf(r.club_id) < 0) fail('new row violates row-level security policy for table "players"', '42501');
+            if (db.players.some(function (x) { return x.club_id === r.club_id && x.name.toLowerCase() === r.name.toLowerCase(); })) fail('duplicate key value violates unique constraint "players_club_name_key"', '23505');
             r = Object.assign({ level: 'I', start_mmr: 1500, career_games: 0, active: true }, r);
           }
           if (table === 'sessions') {
-            if ((r.status || 'open') === 'open' && db.sessions.some(function (s) { return s.status === 'open'; })) fail('duplicate key value violates unique constraint "sessions_one_open"', '23505');
+            if (mine.indexOf(r.club_id) < 0) fail('new row violates row-level security policy for table "sessions"', '42501');
+            if ((r.status || 'open') === 'open' && db.sessions.some(function (s) { return s.club_id === r.club_id && s.status === 'open'; })) fail('duplicate key value violates unique constraint "sessions_one_open"', '23505');
             r = Object.assign({ status: 'open', court_modes: ['normal', 'normal', 'normal'], flex: 4, state: null, played_on: today(), started_at: new Date().toISOString(), ended_at: null }, r);
             r.court_count = r.court_modes.length;
           }
@@ -81,6 +93,14 @@
       try {
         offline();
         window.__rpcLog.push({ name: name, args: JSON.parse(JSON.stringify(a)) });
+        var me = db.auth && db.auth.user.id;
+        if (name === 'create_club') {
+          if (!db.club_admins.some(function (x) { return x.user_id === me; })) fail('only club admins can create clubs', '42501');
+          if (!(a.p_name || '').trim()) fail('name required', '22023');
+          var cid = ++db.seq.clubs;
+          db.clubs.push({ id: cid, name: a.p_name.trim() }); db.club_admins.push({ club_id: cid, user_id: me });
+          persist(); ok({ data: cid, error: null }); return;
+        }
         var s = db.sessions.filter(function (x) { return x.id === a.p_session_id && x.status === 'open'; })[0];
         if (!s) fail('session ' + a.p_session_id + ' is not open', 'P0002');
         if (name === 'sync_session') {
@@ -114,30 +134,39 @@
         rpc: rpc,
         functions: {
           invoke: function (name, o) {
-            var b = o.body || {}, me = db.auth && db.auth.user.id;
-            var out = function () { return { admins: db.admins.map(function (a) { return { id: a.user_id, email: a.email || '', me: a.user_id === me, last_sign_in_at: null }; }) }; };
-            if (!db.admins.some(function (a) { return a.user_id === me; })) return bad('not_admin');
+            var b = o.body || {}, me = db.auth && db.auth.user.id, club = b.club_id;
             var bad = function (code) { return Promise.resolve({ data: null, error: { message: 'Edge Function returned a non-2xx status code', context: { json: function () { return Promise.resolve({ error: code }); } } } }); };
             if (name !== 'manage-admins' || !me) return bad('not_signed_in');
+            var inClub = function (uid, cid) { return db.club_admins.some(function (x) { return x.user_id === uid && x.club_id === cid; }); };
+            if (!inClub(me, club)) return bad('not_admin');
+            var user = function (id) { return db.users.filter(function (u) { return u.id === id; })[0] || {}; };
+            var out = function (extra) { return Object.assign({ admins: db.club_admins.filter(function (x) { return x.club_id === club; }).map(function (x) { return { id: x.user_id, email: user(x.user_id).email || '', me: x.user_id === me, last_sign_in_at: null }; }) }, extra || {}); };
+            var only = function (uid) { return db.club_admins.filter(function (x) { return x.user_id === uid; }).every(function (x) { return inClub(me, x.club_id); }); };
+            var created = false;
             if (b.action === 'add') {
-              var hit = db.admins.filter(function (a) { return a.email === b.email; })[0];
-              if (!hit) { if ((b.password || '').length < 8) return bad('short_password'); db.admins.push({ user_id: 'u' + (db.admins.length + 1), email: b.email, password: b.password }); }
+              var hit = db.users.filter(function (u) { return u.email === b.email; })[0];
+              if (!hit) { if ((b.password || '').length < 8) return bad('short_password'); hit = { id: 'u' + (db.users.length + 1), email: b.email, password: b.password }; db.users.push(hit); created = true; }
+              if (!inClub(hit.id, club)) db.club_admins.push({ club_id: club, user_id: hit.id });
             } else if (b.action === 'remove') {
               if (b.id === me) return bad('cannot_remove_self');
-              if (db.admins.length <= 1) return bad('last_admin');
-              db.admins = db.admins.filter(function (a) { return a.user_id !== b.id; });
+              if (db.club_admins.filter(function (x) { return x.club_id === club; }).length <= 1) return bad('last_admin');
+              db.club_admins = db.club_admins.filter(function (x) { return !(x.user_id === b.id && x.club_id === club); });
             } else if (b.action === 'reset') {
               if ((b.password || '').length < 8) return bad('short_password');
-              db.admins.forEach(function (a) { if (a.user_id === b.id) a.password = b.password; });
+              if (!inClub(b.id, club)) return bad('not_admin_target');
+              if (!only(b.id)) return bad('other_club_admin');
+              user(b.id).password = b.password;
             } else if (b.action !== 'list') return bad('unknown_action');
-            persist(); return Promise.resolve({ data: out(), error: null });
+            persist(); return Promise.resolve({ data: out({ created: created }), error: null });
           }
         },
         auth: {
           getSession: function () { return Promise.resolve({ data: { session: db.auth } }); },
           signInWithPassword: function (c) {
             if (c.password !== 'correct-horse') return Promise.resolve({ data: null, error: { message: 'Invalid login credentials' } });
-            db.auth = { user: { id: 'u1', email: c.email } }; persist();
+            var u = db.users.filter(function (x) { return x.email === c.email; })[0];
+            if (!u) { u = { id: 'u' + (db.users.length + 1), email: c.email }; db.users.push(u); }
+            db.auth = { user: { id: u.id, email: u.email } }; persist();
             return Promise.resolve({ data: { user: db.auth.user }, error: null });
           },
           signOut: function () { db.auth = null; persist(); return Promise.resolve({ error: null }); },

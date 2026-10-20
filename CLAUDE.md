@@ -5,6 +5,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 ## Product decisions (agreed with the owner, Oct 2026)
 
 - **Admin only.** One admin runs the night on an iPad or phone. Players never log in. Don't add player accounts, sign-up, or public pages unless asked.
+- **Clubs (ก๊วน).** Every player and night belongs to a club; admins are per club (`club_admins`). An admin can create another club from Settings and becomes its admin, then adds that club's admins. No self sign-up (owner's choice, Oct 2026).
 - **Supabase is the system of record.** Google Sheets is only a report (planned: append a summary on End day). Don't use Sheets as storage.
 - **Hosting:** static files on GitHub Pages. No build step, no framework. Keep it plain HTML/CSS/JS with supabase-js loaded from jsDelivr at a pinned version.
 - **UI language is Thai.** Code, comments and docs are English.
@@ -25,7 +26,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 ## MMR (Elo v2)
 
 - Start levels (`players.level`, `players.start_mmr`): B เพิ่งเริ่ม 1200, N มือใหม่ 1350, I กลาง 1500, A เก่ง 1650, P โหด 1800. New names from a check-in get a level picker card on the people tab.
-- **Bird ranks** (`A.BIRDS`, computed in `ratings()` as `RT.B`): ลูกเจี๊ยบ <1275, นกกระจอก 1275, นกพิราบ 1425, เหยี่ยว 1575, อินทรี 1725, ฟีนิกซ์ 1875. Up as soon as the floor is reached, down only after falling 25 below it (`stepBird`). Each start level lands in its own bird. Saving a result toasts rank changes. Illustrations are `#b-<bird>` symbols in `index.html` (fixed colours on purpose) shown on a tinted disc (`.bird`, `--bd-*`).
+- **Bird ranks** (`A.BIRDS`, computed in `ratings()` as `RT.B`): ลูกเจี๊ยบ <1275, นกกระจอก 1275, นกพิราบ 1425, เหยี่ยว 1575, อินทรี 1725, ฟีนิกซ์ 1875. Up as soon as the floor is reached, down only after falling 25 below it (`stepBird`). Each start level lands in its own bird. Saving a result toasts rank changes. Illustrations are emblem symbols `#b-<bird>` in `index.html` (fixed colours on purpose): the frame metal climbs with the rank (iron coin, bronze coin, silver shield, gold shield, platinum shield with star, fire shield with crown), and wings break out of the frame from เหยี่ยว up. Source: drawn by a small generator; edit the symbols directly.
 - Expectation per player: `eff = 0.75*own + 0.25*partner` against the opponent team average.
 - K = 48 for a player's first 10 career matches (`career_games`), then 24. Social courts x0.5.
 - Ratings are always **recomputed by replaying tonight's matches** from `start` plus manual edits (`S.adj`, applied before match index `at`). Never store a running rating in state. Editing or deleting a past match must just change `S.done`.
@@ -50,7 +51,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 ## Sync (`js/app.js`, `js/db.js`)
 
 - **A night (session) opens lazily**: signing in does not create one. The first change that belongs to a night (check-in, draw, result, MMR edit) creates it in `runSync` (`openOrCreateSession`; on unique-violation it joins the open night). End day leaves no open night. An open night from an earlier date that was never used is re-dated on sign-in.
-- Every change: `changed()` → write local cache (`bmm-cache-<userId>`, flag `dirty`) → debounce 1.2 s → `sync_session` RPC.
+- Every change: `changed()` → write local cache (`bmm-cache-<userId>-<clubId>`, flag `dirty`; the last club is remembered in `bmm-club-<userId>`) → debounce 1.2 s → `sync_session` RPC.
 - `sync_session` rewrites the night's `session_players`, `matches`, `match_players`, `rating_adjustments` and the `state` snapshot in one transaction. It is idempotent, so retrying is always safe.
 - Failure: keep `dirty`, retry every 10 s and on `online`. The header pill shows the status; tapping it retries.
 - Boot: an unsynced local cache for the same session beats the server snapshot.
@@ -59,21 +60,24 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 - **Undo** is an in-memory stack of state snapshots (`ui.undos`, max 30), pushed by `toast(msg, snapshot)`. Undo keeps the current `sessionId`, `title` and `days`. Cleared on End day.
 - **Google Sheet report**: `buildReport()` before closing; queued in localStorage (`bmm-sheet-queue`) and posted as `text/plain` JSON to the Apps Script web app (`tools/google-sheet-report.gs`, idempotent per night id). URL and token live in localStorage (`bmm-sheet`), per device. Success sets `sessions.sheet_exported_at`.
 - **Edit a member**: pencil on the member row opens name + MMR. The name is written straight to `players` (unique, needs online); the MMR becomes a normal `S.adj` edit (undoable).
-- **Other admins**: Settings → ผู้ดูแลก๊วน calls the `manage-admins` edge function (`supabase/functions/manage-admins`, deployed with verify_jwt, uses the service role and checks the caller is in `admins`). Actions: list, add (creates the auth user with a starting password, no email), remove (not self, not the last), reset another admin's password. `tests/fake-supabase.js` mirrors it under `functions.invoke`.
+- **Other admins**: Settings → ผู้ดูแลก๊วน calls the `manage-admins` edge function (`supabase/functions/manage-admins`, deployed with verify_jwt, uses the service role and checks the caller runs the `club_id` sent by the app). Actions per club: list, add (creates the auth user with a starting password, no email, or adds an existing account), remove (not self, not the last), reset another admin's password (only if every club they run is one the caller also runs). `tests/fake-supabase.js` mirrors it under `functions.invoke`.
 - **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address. Without custom SMTP, Supabase only emails addresses that are members of the Supabase org team, so for other admins the fallback is an admin setting a new password for them in ผู้ดูแลก๊วน.
 
 ## Database
 
 - Migrations live in `supabase/migrations/`, applied in name order. Project ref `vhvlhuimelqsnglhayxs` (Singapore).
-- RLS on every table: authenticated users listed in `public.admins` only. RPCs are `security invoker`, so RLS applies inside them.
-- `players.name` is unique case-insensitively. Removing a member sets `active = false`; history is kept.
-- Only one `open` session at a time (partial unique index).
+- RLS on every table by club membership: `private.my_clubs()` (security definer helpers live in schema `private`). Child rows (session_players, match_players, rating_adjustments) also check that the player belongs to the night's club. RPCs `sync_session`/`close_session` are `security invoker`, so RLS applies inside them; `create_club` is definer and only for existing club admins.
+- `db.js` scopes every players/sessions query with `club_id` (`DB.setClub`). Unique names and the one-open-night rule are per club.
+- `players.name` is unique case-insensitively within a club. Removing a member sets `active = false`; history is kept.
+- Only one `open` session per club (partial unique index `sessions_one_open`).
 
 ## Commands
 
 ```bash
 npm test          # node --test tests/algo.test.js tests/sheet-script.test.js
-npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases, undo, sheet, password) against tests/fake-supabase.js
+npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases, undo, admins, clubs, password) against tests/fake-supabase.js
+npm run explore   # seeded random long run with invariant checks (phone/iPad, light/dark)
+npm run test:db   # all migrations in PGlite + per-user permission checks (tests/db/permissions.sql)
 ```
 
 When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` to match, and add a migration file. Never edit an applied migration.
@@ -85,7 +89,8 @@ When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` 
 - Settings: grouped cards (`.sgroup` > `.ghead` + `.scard` of `.srow` rows) in two fixed columns (`.scol`) from 760px, one column below. Never use CSS columns there: expanding a section must not move cards between columns.
 - Courts tab banner (`.board`): matches done, play time, games per person (fairness), here tonight, then **พักตานี้** chips = the queue in order (first 4 tagged ลงต่อ; tap to swap). There is no separate queue panel any more.
 - Rank rows use `.podium`, not `.top` (`.top` is the header).
-- Look is design C "sports club app" (chosen Oct 2026): font Prompt, navy ink `--accent`, lime `--hi`. Light: pale page, white cards, navy diagonal-stripe `--banner` (`.strip`, `.hero`) and `--panel` (court) with white team cards. Dark: owner asked for **no stripes**; banners and court use soft navy gradients.
+- Look is design C "sports club app" (chosen Oct 2026): font Prompt, navy ink `--accent`, lime `--hi`. Light: pale page, white cards, navy gradient `--banner` (`.board`, `.strip`, `.hero`) and `--panel` (court) with white team cards. Dark: navy surfaces. Owner asked for **no stripes anywhere**.
+- App name shown in the UI is **Budmintan** (header, login, home-screen name).
 - Theme: Settings → สีของแอป (auto / light / dark), stored per device in localStorage `bmm-theme`, applied by a tiny inline script in `<head>` as `html[data-theme]`.
 - Phone and tablet portrait: the menu (`.tabs`) is a floating pill fixed at the bottom; the courts dock sits above it. From 1000px the menu moves into the header.
 - Court: header row (name, mode chip, time, `.redraw` สุ่มใหม่), then the `.match` panel: two `.team` cards split by the net with a lime VS; each team card has its own `.won` (ทีมนี้ชนะ) button, as in the owner's light mockup. บันทึกผล appears under the panel once a winner is picked.

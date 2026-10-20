@@ -64,7 +64,7 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   check('level picker closes', (await page.$('.newcard')) === null);
   await page.waitForSelector('#syncPill.saved', { timeout: 8000 });
   check('first check-in opens tonight', (await db()).sessions.filter(s => s.status === 'open').length === 1);
-  check('header shows tonight\'s date', (await page.textContent('#date')).startsWith('คืน'));
+  check('header shows the club and tonight', (await page.textContent('#date')).startsWith('ก๊วนแบด · คืนนี้'));
 
   await page.click('[data-tab=rank]');
   check('bird legend shows six ranks', (await page.$$('.btile')).length === 6);

@@ -56,14 +56,16 @@ Project `badminton-matchmaker` (Singapore, `vhvlhuimelqsnglhayxs`).
 
 1. Apply the files in `supabase/migrations/` in name order (SQL editor, or `supabase db push`).
 2. Authentication → Users → **Add user** with the admin's email and a password.
-3. Make that user an admin (SQL editor):
+3. Make that user the admin of a club (SQL editor). After that, admins add other admins and new clubs from the app (Settings → ก๊วน / ผู้ดูแลก๊วน), through the `manage-admins` edge function:
    ```sql
-   insert into public.admins (user_id)
-   select id from auth.users where email = 'you@example.com';
+   insert into public.clubs (name) values ('ก๊วนแบด');
+   insert into public.club_admins (club_id, user_id)
+   select (select max(id) from public.clubs), id from auth.users where email = 'you@example.com';
    ```
+   Deploy `supabase/functions/manage-admins` (verify JWT on).
 4. Authentication → URL Configuration: set **Site URL** to `https://kasidito.github.io/badminton-matchmaker/` and add the same address under **Redirect URLs**. The forgot-password email links back here.
 
-Row level security allows nothing unless the signed-in user is in `public.admins`. The key in `js/config.js` is the publishable key, which is meant to be public. Never commit the `service_role` key.
+Row level security limits every row to the admins of its club (`club_admins`); a signed-in user who runs no club sees nothing. The key in `js/config.js` is the publishable key, which is meant to be public. Never commit the `service_role` key.
 
 ### Google Sheet report
 
@@ -87,20 +89,23 @@ Repository → Settings → Pages → Deploy from a branch → `main` / root. Th
 npm test              # unit tests: js/algo.js and the Apps Script (Node 18+)
 npm run e2e           # both UI runs against the fake Supabase (needs Playwright + Chromium)
                       #   tests/smoke.js  main evening on iPad landscape
-                      #   tests/flows.js  phone width, undo, reset, import, late arrival, non-admin
+                      #   tests/flows.js  phone width, undo, reset, import, late arrival, admins, clubs, non-admin
+npm run explore       # seeded random long run (phone + iPad, light + dark) with invariant checks: node tests/explore.js [seed] [steps]
+npm run test:db       # replays every migration in PGlite and checks what each kind of user can read and write
 ```
 
 ## Data model
 
 | Table | Holds |
 |---|---|
-| `players` | members, level, MMR carried into the next night, career match count |
+| `clubs` | ก๊วน; every player and night belongs to one |
+| `club_admins` | who runs which club |
+| `players` | members of a club, level, MMR carried into the next night, career match count |
 | `sessions` | one row per club night; `state` is the live snapshot used to resume |
 | `session_players` | who was checked in that night |
 | `matches` | finished matches in order, court, mode, teams, winner |
 | `match_players` | each player's MMR before and after every match |
 | `rating_adjustments` | manual MMR edits |
-| `admins` | users allowed to use the app |
 
 `sync_session()` rewrites one open night's rows in a single transaction, so fixing an old result, deleting a match or undoing is always consistent. `close_session()` ends the night and stores each player's carried MMR.
 

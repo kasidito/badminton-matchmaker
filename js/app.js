@@ -32,7 +32,7 @@
   function renderDate() {
     var el = $('date'); if (!el) return;
     var d = thaiDate(new Date(), { weekday: 'short', day: 'numeric', month: 'short' });
-    el.textContent = S && S.sessionId ? 'คืนนี้ · ' + d : d + ' · ยังไม่เปิดคืน';
+    el.textContent = (ui.club ? ui.club.name + ' · ' : '') + (S && S.sessionId ? 'คืนนี้ ' + d : d + ' · ยังไม่เปิดคืน');
   }
   function errMsg(e) { return (e && e.message) ? e.message : String(e); }
   function iso(ms) { return ms ? new Date(ms).toISOString() : null; }
@@ -55,8 +55,18 @@
   }
 
   /* ---------- local cache (survives refresh and bad wifi) ---------- */
-  function cacheKey() { return 'bmm-cache-' + (ui.user ? ui.user.id : 'anon'); }
-  function readCache() { try { var c = JSON.parse(localStorage.getItem(cacheKey()) || 'null'); return c && c.S && c.S.v === 4 ? c : null; } catch (e) { return null; } }
+  function cacheKey() { return 'bmm-cache-' + (ui.user ? ui.user.id : 'anon') + (ui.club ? '-' + ui.club.id : ''); }
+  function readCache() {
+    var ok = function (c) { return c && c.S && c.S.v === 4 ? c : null; };
+    try {
+      var c = ok(JSON.parse(localStorage.getItem(cacheKey()) || 'null'));
+      // caches written before clubs existed have no club in the key; buildState only trusts them for the same night id
+      if (!c && ui.user && ui.club && ui.clubs && ui.clubs[0].id === ui.club.id) c = ok(JSON.parse(localStorage.getItem('bmm-cache-' + ui.user.id) || 'null'));
+      return c;
+    } catch (e) { return null; }
+  }
+  function clubKey() { return 'bmm-club-' + (ui.user ? ui.user.id : 'anon'); }
+  function savedClub() { try { return JSON.parse(localStorage.getItem(clubKey()) || 'null'); } catch (e) { return null; } }
   function writeCache() { try { localStorage.setItem(cacheKey(), JSON.stringify({ S: S, dirty: sync.dirty, at: Date.now() })); } catch (e) { } }
 
   /* ---------- sync to Supabase ---------- */
@@ -149,7 +159,7 @@
   /* ---------- boot ---------- */
   function showGate(html) { $('app').hidden = true; $('dock').hidden = true; var g = $('gate'); g.hidden = false; g.innerHTML = '<div class="gate-card">' + html + '</div>'; }
   function loginHtml(err) {
-    return '<span class="logo">' + ic('shuttle') + '</span><h1>จัดคู่ก๊วนแบด</h1><p class="muted">สำหรับผู้ดูแลก๊วนเท่านั้น</p>' +
+    return '<span class="logo">' + ic('shuttle') + '</span><h1>Budmintan</h1><p class="muted">จัดคู่ก๊วนแบด · สำหรับผู้ดูแลก๊วน</p>' +
       '<form id="loginForm" class="add" autocomplete="on">' +
       '<label>อีเมล<input class="field" id="email" type="email" autocomplete="username" required></label>' +
       '<label>รหัสผ่าน<input class="field" id="password" type="password" autocomplete="current-password" required></label>' +
@@ -216,12 +226,36 @@
   async function startFor(user) {
     ui.user = user;
     showGate('<p>กำลังโหลดข้อมูล…</p>');
+    var clubs = null;
+    try { clubs = await DB.myClubs(); } catch (e) { }
+    if (clubs && !clubs.length) {
+      showGate('<h1>บัญชีนี้ยังไม่ใช่ผู้ดูแล</h1><p class="muted">' + esc(user.email || '') + ' เข้าสู่ระบบได้ แต่ยังไม่ได้เป็นผู้ดูแลของก๊วนไหน ให้ผู้ดูแลก๊วนเพิ่มอีเมลนี้ที่ ตั้งค่า > ผู้ดูแลก๊วน</p><button class="btn" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button>');
+      return;
+    }
+    var saved = savedClub();
+    var club = clubs ? (clubs.filter(function (c) { return saved && c.id === saved.id; })[0] || clubs[0]) : saved;
+    if (!club) { showGate('<h1>โหลดข้อมูลไม่ได้</h1><p class="muted">ต่อระบบไม่ได้ ลองใหม่เมื่อออนไลน์</p><button class="btn primary" data-act="reload">ลองใหม่</button>'); return; }
+    ui.clubs = clubs || [club];
+    await openClub(club);
+  }
+  async function switchClub(id) {
+    var c = (ui.clubs || []).filter(function (x) { return x.id === id; })[0]; if (!c) return;
+    ui.busy = 'กำลังสลับก๊วน…'; render();
+    try { await flushSync(); } catch (e) { ui.busy = null; toast('ยังบันทึกคืนนี้ขึ้นระบบไม่ได้ ต่อเน็ตแล้วลองสลับอีกครั้ง', null); render(); return; }
+    ui.busy = null;
+    await openClub(c);
+    ui.tab = 'play';
+    toast('สลับไปก๊วน ' + c.name + ' แล้ว', null); render();
+  }
+  /* load one club's members, open night and history; everything after this is scoped to it */
+  async function openClub(club) {
+    ui.club = { id: club.id, name: club.name };
+    DB.setClub(club.id);
+    try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (e) { }
+    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
+    sync.dirty = false;
     var cache = readCache();
     try {
-      if (!(await DB.isAdmin(user.id))) {
-        showGate('<h1>บัญชีนี้ยังไม่ใช่ผู้ดูแล</h1><p class="muted">' + esc(user.email || '') + ' เข้าสู่ระบบได้ แต่ยังไม่ได้รับสิทธิ์ผู้ดูแล ติดต่อเจ้าของระบบเพื่อเพิ่มสิทธิ์</p><button class="btn" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button>');
-        return;
-      }
       var res = await Promise.all([DB.loadPlayers(), DB.openSession(), DB.loadClosedDays(30)]);
       var session = res[1];
       // a night opened on an earlier day but never used is moved to today
@@ -270,7 +304,8 @@
   var ADMIN_ERR = {
     bad_email: 'อีเมลไม่ถูกต้อง', short_password: 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร', cannot_remove_self: 'ถอดสิทธิ์ตัวเองไม่ได้',
     last_admin: 'ต้องมีผู้ดูแลอย่างน้อย 1 คน', not_admin: 'บัญชีนี้ไม่ใช่ผู้ดูแล', not_signed_in: 'ต้องเข้าสู่ระบบใหม่',
-    use_change_password: 'รหัสของตัวเองให้เปลี่ยนที่หัวข้อบัญชี', not_admin_target: 'คนนี้ไม่ใช่ผู้ดูแลแล้ว'
+    use_change_password: 'รหัสของตัวเองให้เปลี่ยนที่หัวข้อบัญชี', not_admin_target: 'คนนี้ไม่ใช่ผู้ดูแลแล้ว',
+    other_club_admin: 'คนนี้ดูแลก๊วนอื่นที่คุณไม่ได้ดูแลด้วย ตั้งรหัสให้ไม่ได้', no_club: 'ยังไม่ได้เลือกก๊วน'
   };
   function adminErr(e) { var m = errMsg(e); return ADMIN_ERR[m] || m; }
   async function loadAdmins() {
@@ -648,8 +683,16 @@
       '<div class="line"><button class="btn xs" type="button" data-act="gentoken">สร้างรหัสใหม่</button><button class="btn xs" type="button" data-act="copytoken">คัดลอกรหัส</button></div><button class="btn sm primary" type="submit">บันทึกและส่งทดสอบ</button></form>' +
       (pending ? '<button class="btn sm" data-act="flushsheet">' + ic('cloud') + 'ส่งรายงานที่ค้าง (' + pending + ')</button>' : '') + '</div></details>';
 
+    var clubs = '<form id="clubForm" class="srow" autocomplete="off"><label class="stext"><b>ชื่อก๊วนนี้</b><input class="field" id="clubName" maxlength="60" value="' + esc(ui.club ? ui.club.name : '') + '" aria-label="ชื่อก๊วน" required></label><button class="btn sm" type="submit">บันทึกชื่อ</button></form>';
+    (ui.clubs || []).forEach(function (c) {
+      if (ui.club && c.id === ui.club.id) return;
+      clubs += '<div class="srow"><div class="stext"><b>' + esc(c.name) + '</b><span>ก๊วนอื่นที่คุณดูแล</span></div><button class="btn sm" data-act="club-switch" data-id="' + c.id + '">' + ic('swap') + 'สลับไปก๊วนนี้</button></div>';
+    });
+    clubs += '<details class="sdetails"' + (ui.newClubOpen ? ' open' : '') + '><summary><span class="stext"><b>สร้างก๊วนใหม่</b><span>ผู้เล่นและประวัติแยกจากก๊วนนี้ทั้งหมด</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+      '<form id="newClubForm" class="add" autocomplete="off"><input class="field" id="newClubName" maxlength="60" placeholder="ชื่อก๊วน เช่น ก๊วนแบดวันเสาร์" aria-label="ชื่อก๊วนใหม่" required><button class="btn sm primary" type="submit">' + ic('plus') + 'สร้างและสลับไป</button></form>' +
+      '<p class="muted small">คุณจะเป็นผู้ดูแลของก๊วนใหม่ แล้วเพิ่มบัญชีคนอื่นเป็นผู้ดูแลได้ที่หัวข้อผู้ดูแลก๊วน คนที่เป็นผู้ดูแลเฉพาะก๊วนนั้นจะไม่เห็นผู้เล่นของก๊วนนี้</p></div></details>';
     return '<div class="scol">' + group('court', 'คืนนี้', tonight) + group('flag', 'จบคืน', end) + group('palette', 'หน้าตา', look) + '</div>' +
-      '<div class="scol">' + group('shield', 'ผู้ดูแลก๊วน', adminsBody()) + group('gear', 'บัญชี', account) + group('sliders', 'ข้อมูลและขั้นสูง', data) + '</div>';
+      '<div class="scol">' + group('users', 'ก๊วน', clubs) + group('shield', 'ผู้ดูแลก๊วน', adminsBody()) + group('gear', 'บัญชี', account) + group('sliders', 'ข้อมูลและขั้นสูง', data) + '</div>';
   }
   function dockHtml() {
     if (activeCount() < 4) return '<div class="dock-in"><button class="btn primary" data-act="tab" data-tab="people">' + ic('users') + 'ไปเช็กอินผู้เล่น</button></div>';
@@ -964,6 +1007,7 @@
     else if (a === 'edit-mmr') ui.editId = +t.dataset.id;
     else if (a === 'edit-player') ui.editPlayer = +t.dataset.id;
     else if (a === 'setlevel') { setLevel(+t.dataset.id, t.dataset.lv); }
+    else if (a === 'club-switch') { switchClub(+t.dataset.id); return; }
     else if (a === 'restpick') { ui.restPick = !ui.restPick; ui.sel = null; }
     else if (a === 'rest') { var rp = A.findP(S, +t.dataset.id); if (rp && A.toggleRest(S, rp.id)) msg = rp.rest ? rp.name + ' ขอพัก 1 ตา' : rp.name + ' กลับเข้าคิวแล้ว'; }
     else if (a === 'new-done') { ui.newIds = []; }
@@ -1039,6 +1083,27 @@
       ui.busy = null; render();
     }
     else if (f.id === 'playerForm') { await savePlayerEdit(f); }
+    else if (f.id === 'clubForm') {
+      var cn = $('clubName').value.replace(/\s+/g, ' ').trim();
+      if (!cn || !ui.club) return;
+      try { await DB.renameClub(ui.club.id, cn); ui.club.name = cn; (ui.clubs || []).forEach(function (c) { if (c.id === ui.club.id) c.name = cn; }); try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (x) { } toast('เปลี่ยนชื่อก๊วนแล้ว', null); }
+      catch (err) { toast('เปลี่ยนชื่อก๊วนไม่ได้: ' + errMsg(err), null); }
+      render();
+    }
+    else if (f.id === 'newClubForm') {
+      var nn = $('newClubName').value.replace(/\s+/g, ' ').trim();
+      if (!nn) return;
+      ui.busy = 'กำลังสร้างก๊วน…'; render();
+      try {
+        await flushSync();
+        var cid = await DB.createClub(nn);
+        ui.clubs = (ui.clubs || []).concat([{ id: cid, name: nn }]);
+        ui.busy = null;
+        await openClub({ id: cid, name: nn });
+        ui.tab = 'people';
+        toast('สร้างก๊วน ' + nn + ' แล้ว เริ่มจากวางรายชื่อผู้เล่น', null); render();
+      } catch (err) { ui.busy = null; toast('สร้างก๊วนไม่ได้: ' + errMsg(err), null); render(); }
+    }
     else if (f.id === 'adminAddForm') {
       var em2 = $('admEmail').value.trim(), pw2 = $('admPw').value;
       if (await adminAction({ action: 'add', email: em2, password: pw2 }, null)) { $('admEmail').value = ''; $('admPw').value = ''; }
