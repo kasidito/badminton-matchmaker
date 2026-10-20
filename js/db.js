@@ -13,7 +13,7 @@
     init: function () {
       var cfg = root.APP_CONFIG;
       c = root.supabase.createClient(cfg.supabaseUrl, cfg.supabaseKey, {
-        auth: { persistSession: true, autoRefreshToken: true }
+        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: 'implicit' }
       });
       return c;
     },
@@ -49,6 +49,16 @@
         title: title, court_count: courtModes.length, court_modes: courtModes, flex: flex
       }).select('*').single());
     },
+    retitleSession: async function (id, title, playedOn) {
+      return must(await c.from('sessions').update({ title: title, played_on: playedOn, started_at: new Date().toISOString() })
+        .eq('id', id).eq('status', 'open').select('*').single());
+    },
+    updatePlayer: async function (id, fields) {
+      must(await c.from('players').update(fields).eq('id', id));
+    },
+    markExported: async function (id) {
+      must(await c.from('sessions').update({ sheet_exported_at: new Date().toISOString() }).eq('id', id));
+    },
     sync: async function (sessionId, p) {
       return must(await c.rpc('sync_session', {
         p_session_id: sessionId, p_state: p.state, p_court_modes: p.court_modes, p_flex: p.flex,
@@ -58,6 +68,18 @@
     closeSession: async function (sessionId, carry) {
       must(await c.rpc('close_session', { p_session_id: sessionId, p_players: carry }));
     },
+
+    /* every table, for the "download all data" backup */
+    exportAll: async function () {
+      var out = { exportedAt: new Date().toISOString() };
+      var tables = ['players', 'sessions', 'session_players', 'matches', 'match_players', 'rating_adjustments'];
+      for (var i = 0; i < tables.length; i++) out[tables[i]] = must(await c.from(tables[i]).select('*'));
+      return out;
+    },
+
+    /* password */
+    resetPassword: async function (email, redirectTo) { must(await c.auth.resetPasswordForEmail(email, { redirectTo: redirectTo })); },
+    updatePassword: async function (pw) { return must(await c.auth.updateUser({ password: pw })).user; },
 
     /* past sessions, oldest first, in the same shape the app keeps in S.days */
     loadClosedDays: async function (limit) {

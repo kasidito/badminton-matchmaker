@@ -24,7 +24,7 @@
   function query(table) {
     var st = { filters: [], order: [], lim: null, op: 'select', payload: null, single: false, sel: '*' };
     var api = {
-      select: function (c) { st.sel = c || '*'; return api; },
+      select: function (c) { st.sel = c || '*'; if (st.op !== 'select') st.returning = true; return api; },
       eq: function (c, v) { st.filters.push(function (r) { return r[c] === v; }); return api; },
       in: function (c, vs) { st.filters.push(function (r) { return vs.indexOf(r[c]) >= 0; }); return api; },
       order: function (c, o) { st.order.push([c, o && o.ascending === false ? -1 : 1]); return api; },
@@ -58,7 +58,12 @@
         return st.single ? out[0] : out;
       }
       var hit = rows.filter(function (r) { return st.filters.every(function (f) { return f(r); }); });
-      if (st.op === 'update') { hit.forEach(function (r) { Object.assign(r, st.payload); }); return null; }
+      if (st.op === 'update') {
+        hit.forEach(function (r) { Object.assign(r, st.payload); });
+        if (!st.returning) return null;
+        var copy = JSON.parse(JSON.stringify(hit));
+        return st.single ? copy[0] : copy;
+      }
       hit = hit.slice();
       st.order.slice().reverse().forEach(function (o) { hit.sort(function (a, b) { return (a[o[0]] > b[o[0]] ? 1 : a[o[0]] < b[o[0]] ? -1 : 0) * o[1]; }); });
       if (st.lim != null) hit = hit.slice(0, st.lim);
@@ -114,7 +119,9 @@
             db.auth = { user: { id: 'u1', email: c.email } }; persist();
             return Promise.resolve({ data: { user: db.auth.user }, error: null });
           },
-          signOut: function () { db.auth = null; persist(); return Promise.resolve({ error: null }); }
+          signOut: function () { db.auth = null; persist(); return Promise.resolve({ error: null }); },
+          resetPasswordForEmail: function (email, o) { window.__resetRequests = (window.__resetRequests || []).concat([{ email: email, redirectTo: o && o.redirectTo }]); return Promise.resolve({ data: {}, error: null }); },
+          updateUser: function (u) { if (!db.auth) return Promise.resolve({ data: null, error: { message: 'Auth session missing!' } }); db.passwordChanged = u.password; persist(); return Promise.resolve({ data: { user: db.auth.user }, error: null }); }
         }
       };
     }

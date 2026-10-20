@@ -7,7 +7,7 @@
   var LV_LABEL = { N: 'มือใหม่', I: 'กลาง', A: 'เก่ง' };
 
   var S = null;   // the session being run (shape documented in CLAUDE.md)
-  var ui = { tab: 'play', sel: null, confirm: null, ct: null, editId: null, toast: null, tt: null, user: null, busy: null, status: 'saved', statusMsg: '' };
+  var ui = { tab: 'play', sel: null, confirm: null, ct: null, editId: null, toast: null, tt: null, user: null, busy: null, status: 'saved', statusMsg: '', undos: [] };
   var sync = { timer: null, running: false, dirty: false };
 
   /* ---------- helpers ---------- */
@@ -20,6 +20,16 @@
   function mins(ts) { return ts ? Math.max(0, Math.floor((Date.now() - ts) / 60000)) : null; }
   function thaiDate(d, opts) { try { return d.toLocaleDateString('th-TH', opts); } catch (e) { return d.toISOString().slice(0, 10); } }
   function todayTitle() { return thaiDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
+  function todayISO() { try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); } catch (e) { return new Date().toISOString().slice(0, 10); } }
+  function sessionUsed(s) {
+    var st = s.state;
+    if (!st) return false;
+    return (st.done && st.done.length) || (st.live && st.live.some(Boolean)) || (st.players && st.players.some(function (p) { return p.active; }));
+  }
+  function renderDate() {
+    var el = $('date'); if (!el) return;
+    el.textContent = S && S.sessionId && S.title ? 'คืน' + S.title.replace(/^วัน/, '') : thaiDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long' }) + ' · ยังไม่เปิดคืน';
+  }
   function errMsg(e) { return (e && e.message) ? e.message : String(e); }
   function iso(ms) { return ms ? new Date(ms).toISOString() : null; }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -81,15 +91,34 @@
     sync.dirty = true; writeCache(); setStatus('pending');
     clearTimeout(sync.timer); sync.timer = setTimeout(runSync, 1200);
   }
+  /* A night is opened on the first change that belongs to it (check-in, draw, result, MMR edit). */
+  function needsSession() {
+    return S.done.length > 0 || S.adj.length > 0 || S.live.some(Boolean) || S.players.some(function (p) { return p.active; });
+  }
+  async function openOrCreateSession() {
+    var ns;
+    try { ns = await DB.createSession(todayTitle(), S.courts.map(function (c) { return c.mode; }), S.flex || 0); }
+    catch (e) {
+      if (e.code !== '23505') throw e;            // another device opened tonight first: join it
+      ns = await DB.openSession();
+      if (!ns) throw e;
+    }
+    S.sessionId = ns.id; S.title = ns.title;
+    renderDate();
+    return ns;
+  }
   async function runSync() {
     if (sync.running || !sync.dirty) return;
     sync.running = true; sync.dirty = false; setStatus('saving');
     try {
+      if (!S.sessionId) {
+        if (!needsSession()) { writeCache(); setStatus('saved'); return; }
+        await openOrCreateSession();
+      }
       try { await DB.sync(S.sessionId, buildPayload()); }
       catch (e) {
-        if (e.code !== 'P0002') throw e;           // session was closed elsewhere: open a new one and retry
-        var ns = await DB.createSession(todayTitle(), S.courts.map(function (c) { return c.mode; }), S.flex || 0);
-        S.sessionId = ns.id;
+        if (e.code !== 'P0002') throw e;           // night was closed on another device: open a new one and retry
+        await openOrCreateSession();
         await DB.sync(S.sessionId, buildPayload());
       }
       writeCache();
@@ -121,26 +150,52 @@
       '<label>อีเมล<input class="field" id="email" type="email" autocomplete="username" required></label>' +
       '<label>รหัสผ่าน<input class="field" id="password" type="password" autocomplete="current-password" required></label>' +
       (err ? '<p class="err">' + esc(err) + '</p>' : '') +
-      '<button class="btn primary" type="submit">เข้าสู่ระบบ</button></form>';
+      '<button class="btn primary" type="submit">เข้าสู่ระบบ</button>' +
+      '<button class="btn" type="button" data-act="forgot">ลืมรหัสผ่าน</button></form>';
+  }
+  function forgotHtml(err, ok) {
+    return '<span class="logo">' + ic('shuttle') + '</span><h1>ลืมรหัสผ่าน</h1>' +
+      (ok ? '<p>' + esc(ok) + '</p>' :
+        '<p class="muted">ใส่อีเมลผู้ดูแล ระบบจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่ไปให้</p>' +
+        '<form id="forgotForm" class="add" autocomplete="on"><label>อีเมล<input class="field" id="femail" type="email" autocomplete="username" required></label>' +
+        (err ? '<p class="err">' + esc(err) + '</p>' : '') +
+        '<button class="btn primary" type="submit">ส่งลิงก์</button></form>') +
+      '<button class="btn" type="button" data-act="tologin">กลับไปหน้าเข้าสู่ระบบ</button>';
+  }
+  function recoverHtml(err) {
+    return '<span class="logo">' + ic('shuttle') + '</span><h1>ตั้งรหัสผ่านใหม่</h1>' +
+      '<form id="recoverForm" class="add" autocomplete="off">' +
+      '<label>รหัสผ่านใหม่<input class="field" id="rpw" type="password" minlength="8" autocomplete="new-password" required></label>' +
+      '<label>ยืนยันรหัสผ่านใหม่<input class="field" id="rpw2" type="password" minlength="8" autocomplete="new-password" required></label>' +
+      (err ? '<p class="err">' + esc(err) + '</p>' : '') +
+      '<button class="btn primary" type="submit">บันทึกรหัสผ่าน</button></form>';
   }
   async function boot() {
+    var recovering = /type=recovery/.test(location.hash);   // arrived from a reset-password email
     showGate('<p>กำลังโหลด…</p>');
     try { DB.init(); } catch (e) { showGate('<h1>โหลดระบบไม่ได้</h1><p class="muted">ตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้านี้</p>'); return; }
     var user = null;
     try { user = await DB.getUser(); } catch (e) { }
+    if (recovering && user) { showGate(recoverHtml()); return; }
+    if (recovering && !user) { showGate(loginHtml('ลิงก์ตั้งรหัสผ่านหมดอายุหรือใช้ไปแล้ว ขอลิงก์ใหม่ได้ที่ปุ่ม ลืมรหัสผ่าน')); return; }
     if (!user) { showGate(loginHtml()); return; }
     await startFor(user);
   }
   function fromRow(row, active, base) {
-    return { id: row.id, name: row.name, active: !!active, base: base || 0, level: row.level, start: row.start_mmr, games: row.career_games, freeSince: active ? Date.now() : 0 };
+    return { id: row.id, name: row.name, active: !!active, base: base || 0, level: row.level, start: row.start_mmr, games: row.career_games, freeSince: active ? Date.now() : 0, qr: Math.random() };
   }
+  /* session may be null: tonight has not been opened yet */
   function buildState(session, rows, cache) {
-    var st;
-    if (cache && cache.dirty && cache.S.sessionId === session.id) st = cache.S;      // unsynced local changes win
-    else if (session.state && session.state.v === 4) st = session.state;
-    else st = { v: 4, players: [], courts: session.court_modes.map(function (m) { return { mode: m }; }), live: [], done: [], adj: [], flex: session.flex, board: cache ? !!cache.S.board : false };
-    st.sessionId = session.id;
-    st.title = session.title;
+    var st, sid = session ? session.id : null;
+    if (cache && cache.dirty && cache.S.sessionId === sid) st = cache.S;      // unsynced local changes win
+    else if (session && session.state && session.state.v === 4) st = session.state;
+    else {
+      var modes = session ? session.court_modes : (cache ? cache.S.courts.map(function (c) { return c.mode; }) : ['normal', 'normal', 'normal']);
+      st = { v: 4, players: [], courts: modes.map(function (m) { return { mode: m }; }), live: [], done: [], adj: [],
+        flex: session ? session.flex : (cache ? (cache.S.flex || 0) : 4), board: cache ? !!cache.S.board : false };
+    }
+    st.sessionId = sid;
+    st.title = session ? session.title : null;
     var have = {}; st.players.forEach(function (p) { have[p.id] = p; });
     var used = {}; st.done.forEach(function (m) { m.t[0].concat(m.t[1]).forEach(function (id) { used[id] = 1; }); });
     st.live.forEach(function (c) { if (c) c.t[0].concat(c.t[1]).forEach(function (id) { used[id] = 1; }); });
@@ -165,13 +220,13 @@
       }
       var res = await Promise.all([DB.loadPlayers(), DB.openSession(), DB.loadClosedDays(30)]);
       var session = res[1];
-      if (!session) {
-        var modes = cache ? cache.S.courts.map(function (c) { return c.mode; }) : ['normal', 'normal', 'normal'];
-        session = await DB.createSession(todayTitle(), modes, cache ? (cache.S.flex || 0) : 4);
+      // a night opened on an earlier day but never used is moved to today
+      if (session && session.played_on !== todayISO() && !sessionUsed(session)) {
+        try { session = await DB.retitleSession(session.id, todayTitle(), todayISO()); } catch (e) { }
       }
       S = buildState(session, res[0], cache);
       S.days = res[2];
-      sync.dirty = !!(cache && cache.dirty && cache.S.sessionId === session.id);
+      sync.dirty = !!(cache && cache.dirty && cache.S.sessionId === (session ? session.id : null));
     } catch (e) {
       if (!cache) { showGate('<h1>โหลดข้อมูลไม่ได้</h1><p class="muted">' + esc(errMsg(e)) + '</p><button class="btn primary" data-act="reload">ลองใหม่</button>'); return; }
       S = cache.S; sync.dirty = !!cache.dirty;
@@ -197,12 +252,17 @@
       '<span class="tmeta" title="MMR เฉลี่ยของทีม · โอกาสชนะ">เฉลี่ย ' + avg + ' · ชนะ ' + pct + '%</span>' +
       '<button class="won' + (c.w === s ? ' on' : '') + '" data-act="win" data-ci="' + ci + '" data-s="' + s + '" aria-pressed="' + (c.w === s) + '">' + ic('check') + (c.w === s ? 'ชนะ' : 'ทีมนี้ชนะ') + '</button></div>';
   }
-  function courtHtml(c, ci, map, RT, st, free) {
+  function courtHtml(c, ci, map, RT, st, free, next) {
     var mode = S.courts[ci].mode;
     var head = '<div class="court-head"><span class="cname">สนาม ' + (ci + 1) + '</span>' +
       '<button class="modechip m-' + mode + '" data-act="mode" data-ci="' + ci + '" aria-label="โหมดสนาม ' + (ci + 1) + ': ' + MODE_LABEL[mode] + ' แตะเพื่อเปลี่ยน">' + MODE_LABEL[mode] + '</button>';
     if (!c) {
-      return '<section class="court">' + head + '</div><div class="slot"><span>สนามว่าง</span><button class="btn sm primary" data-act="draw" data-ci="' + ci + '"' + (free >= 4 ? '' : ' disabled') + '>' + ic('shuffle') + 'สุ่มลงสนามนี้</button></div></section>';
+      var hint;
+      if (next && next.after != null) hint = '<span>สนามว่าง · คิวต่อจากสนาม ' + (next.after + 1) + '</span>';
+      else if (next && next.length === 4) hint = '<span class="next"><b>ถัดไป</b> ' + next.map(function (id) { return esc(map[id].name); }).join(', ') +
+        (mode !== 'normal' && S.flex ? '<small>โหมดนี้อาจเลือกคนถัดไปในคิวแทน เพื่อให้ระดับเหมาะ</small>' : '') + '</span>';
+      else hint = '<span>สนามว่าง' + (free < 4 ? ' · คนรอคิวไม่ถึง 4 คน' : '') + '</span>';
+      return '<section class="court">' + head + '</div><div class="slot">' + hint + '<button class="btn sm primary" data-act="draw" data-ci="' + ci + '"' + (free >= 4 ? '' : ' disabled') + '>' + ic('shuffle') + 'สุ่มลงสนามนี้</button></div></section>';
     }
     var stale = A.isStale(S, c), m = mins(c.at);
     head += A.hasRes(c) ? '<span class="badge ready">เลือกผู้ชนะแล้ว กดบันทึก</span>' : '<span class="badge">เล่นมา ' + (m || 0) + ' นาที</span>';
@@ -229,7 +289,16 @@
     if (ui.sel) h += '<div class="selbar"><span>' + ic('swap') + ' เลือก <b>' + esc(selName()) + '</b> แตะคนอื่นในสนามหรือคิวเพื่อสลับ</span><button class="btn sm" data-act="unsel">ยกเลิก</button></div>';
     if (activeCount() < 4) h += '<div class="note">ยังเช็กอินไม่ถึง 4 คน ไปที่แท็บผู้เล่นแล้ววางรายชื่อจากไลน์ หรือเปิดสวิตช์ทีละคน <button class="btn sm" data-act="tab" data-tab="people">' + ic('users') + 'ไปแท็บผู้เล่น</button></div>';
     h += '<div class="playgrid"><div class="courts">';
-    S.live.forEach(function (c, ci) { h += courtHtml(c, ci, map, RT, st, free); });
+    // any single draw takes the top 4 of the queue, so only the first empty court can promise names
+    var firstEmpty = -1;
+    S.live.forEach(function (c, ci) {
+      var next = null;
+      if (!c) {
+        if (firstEmpty < 0) { firstEmpty = ci; next = q.slice(0, 4).map(function (x) { return x.id; }); }
+        else next = { after: firstEmpty };
+      }
+      h += courtHtml(c, ci, map, RT, st, free, next);
+    });
     h += '</div><aside class="side"><div class="card"><div class="line"><h2>คิว</h2><span class="muted small">แตะชื่อเพื่อสลับกับคนในสนาม</span></div>';
     if (!q.length) h += '<span class="muted">ไม่มีคนรอ</span>';
     else {
@@ -317,7 +386,7 @@
       for (var i = S.done.length - 1; i >= 0; i--) {
         var m = S.done[i];
         h += '<div class="hm"><span>แมตช์ ' + (i + 1) + ' · สนาม ' + ((m.court || 0) + 1) + modeTag(m.mode) + '</span><span>' + matchText(nm, m) + '</span>' +
-          '<div class="acts"><button class="btn" data-act="hflip" data-i="' + i + '">' + ic('swap') + 'สลับผู้ชนะ</button><button class="btn" data-act="hdel" data-i="' + i + '">' + ic('trash') + 'ลบแมตช์นี้</button></div></div>';
+          '<div class="acts"><button class="btn" data-act="hflip" data-i="' + i + '">' + ic('swap') + 'สลับผู้ชนะ</button><button class="btn' + (ui.confirm === 'hdel' + i ? ' danger' : '') + '" data-act="hdel" data-i="' + i + '">' + ic('trash') + (ui.confirm === 'hdel' + i ? 'กดอีกครั้งเพื่อลบ' : 'ลบแมตช์นี้') + '</button></div></div>';
       }
       h += '</div></details></div>';
     }
@@ -357,7 +426,16 @@
       '<p class="muted small">ล้างแมตช์ของเกมนี้โดยไม่เก็บ และตั้ง MMR ทุกคนกลับตามระดับ เกมที่จบแล้วยังอยู่ กดย้อนกลับได้</p></div>';
     h += '<div class="card"><h2>นำเข้าจากแอปเดิม</h2><p class="muted small">วางข้อมูลจากปุ่ม "คัดลอกข้อมูลสำรอง" ของแอปเดิม ระบบจะจับคู่ชื่อ เพิ่มคนที่ยังไม่มี และนำแมตช์เข้าเกมนี้ ทำได้เมื่อเกมนี้ยังไม่มีแมตช์</p>' +
       '<form id="importForm" class="add" autocomplete="off"><textarea id="impText" rows="3" placeholder="วางข้อมูลสำรองที่นี่" aria-label="ข้อมูลสำรองจากแอปเดิม"></textarea><button class="btn" type="submit"' + (S.done.length ? ' disabled' : '') + '>นำเข้า</button></form></div>';
-    h += '<div class="card"><div class="line"><div><h2>บัญชี</h2><span class="muted small">' + esc(ui.user && ui.user.email || '') + '</span></div><button class="btn" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div></div>';
+    var sc = sheetCfg(), pending = sheetQueue().length;
+    h += '<div class="card"><h2>รายงาน Google Sheet</h2><p class="muted small">ตอนกดจบเกม ระบบส่งสรุปคืนนั้น (ผลรายคน แมตช์ทั้งหมด และอันดับล่าสุด) ไปที่ Google Sheet ใช้เป็นรายงานและสำเนาข้อมูล ตั้งค่าครั้งเดียวต่อเครื่อง วิธีตั้งค่าอยู่ใน README</p>' +
+      '<form id="sheetForm" class="add" autocomplete="off">' +
+      '<label class="small">ลิงก์ Web app<input class="field" id="sheetUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(sc.url) + '"></label>' +
+      '<label class="small">รหัส (token) ต้องตรงกับในสคริปต์<input class="field" id="sheetToken" value="' + esc(sc.token) + '"></label>' +
+      '<div class="line"><button class="btn sm" type="button" data-act="gentoken">สร้างรหัสใหม่</button><button class="btn sm" type="button" data-act="copytoken">คัดลอกรหัส</button><button class="btn sm primary" type="submit">บันทึกและส่งทดสอบ</button></div></form>' +
+      (pending ? '<button class="btn" data-act="flushsheet">' + ic('cloud') + 'ส่งรายงานที่ค้าง (' + pending + ')</button>' : '') + '</div>';
+    h += '<div class="card"><div class="line"><div><h2>ดาวน์โหลดข้อมูลทั้งหมด</h2><span class="muted small">ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์ เก็บไว้เป็นสำเนา</span></div><button class="btn" data-act="export">' + ic('save') + 'ดาวน์โหลด</button></div></div>';
+    h += '<div class="card"><div class="line"><div><h2>บัญชี</h2><span class="muted small">' + esc(ui.user && ui.user.email || '') + '</span></div><button class="btn" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
+      '<form id="pwForm" class="add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn" type="submit">เปลี่ยนรหัสผ่าน</button></form></div>';
     return h;
   }
   function dockHtml() {
@@ -369,7 +447,14 @@
     if (!ui.toast) { el.hidden = true; el.innerHTML = ''; return; }
     el.hidden = false;
     el.classList.toggle('lift', ui.tab === 'play' && !S.board);
-    el.innerHTML = '<span>' + esc(ui.toast.msg) + '</span>' + (ui.toast.snap ? '<button data-act="undo">' + ic('undo') + 'ย้อนกลับ</button>' : '');
+    el.innerHTML = '<span>' + esc(ui.toast.msg) + '</span>' + (ui.toast.undo ? '<button data-act="undo">' + ic('undo') + 'ย้อนกลับ</button>' : '');
+  }
+  function renderUndo() {
+    var b = $('undoBtn'); if (!b) return;
+    var last = ui.undos[ui.undos.length - 1];
+    b.disabled = !last;
+    b.title = last ? 'ย้อนกลับ: ' + last.label : 'ยังไม่มีอะไรให้ย้อนกลับ';
+    b.setAttribute('aria-label', b.title);
   }
   function renderStatus() {
     var el = $('syncPill'); if (!el) return;
@@ -393,13 +478,15 @@
     v.className = 'tab-' + ui.tab + (ui.tab === 'play' ? ' pad-dock' : '');
     dock.hidden = ui.tab !== 'play';
     dock.innerHTML = dockHtml();
-    renderToast(); renderStatus();
+    renderToast(); renderStatus(); renderUndo(); renderDate();
     var old = document.querySelector('.busy'); if (old) old.remove();
     if (ui.busy) { var b = document.createElement('div'); b.className = 'busy'; b.innerHTML = '<div>' + esc(ui.busy) + '</div>'; document.body.appendChild(b); }
     if (ui.tab === 'rank' && ui.editId != null) { var mi = $('mmrIn'); if (mi) { mi.focus(); mi.select(); } }
   }
+  /* snap = state before the action. Passing it records an undo step (kept for the whole night, up to 30). */
   function toast(msg, snap) {
-    ui.toast = { msg: msg, snap: snap || null };
+    if (snap) { ui.undos.push({ snap: snap, label: msg }); if (ui.undos.length > 30) ui.undos.shift(); }
+    ui.toast = { msg: msg, undo: !!snap };
     clearTimeout(ui.tt);
     ui.tt = setTimeout(function () { ui.toast = null; renderToast(); }, 7000);
     if (S) renderToast();
@@ -415,6 +502,7 @@
       var cur = (p.base || 0) + st.played[id];
       if (cur < mc) p.base = (p.base || 0) + mc - cur;
       p.freeSince = Date.now();
+      p.qr = Math.random();
     }
     p.active = on;
   }
@@ -460,17 +548,83 @@
     ui.busy = 'กำลังจบเกมและบันทึก…'; render();
     try {
       await flushSync();
+      var report = buildReport();
       await DB.closeSession(S.sessionId, A.carryForward(S));
       var snap = A.endGame(S, S.title || todayTitle());
-      var ns = await DB.createSession(todayTitle(), S.courts.map(function (c) { return c.mode; }), S.flex || 0);
-      S.sessionId = ns.id; S.title = ns.title;
+      S.sessionId = null; S.title = null;              // next night opens at its first check-in
       S.players.forEach(function (p) { p.active = false; });
-      changed();
+      ui.undos = [];
+      changed(); renderDate();
       try { S.days = await DB.loadClosedDays(30); } catch (e) { }
-      toast('จบเกมแล้ว บันทึก ' + snap.count + ' แมตช์ขึ้นระบบ', null);
+      var msg = 'จบเกมแล้ว บันทึก ' + snap.count + ' แมตช์ขึ้นระบบ';
+      if (sheetCfg().url) {
+        saveQueue(sheetQueue().concat([report]));
+        ui.busy = 'กำลังส่งรายงานไป Google Sheet…'; render();
+        var sent = await flushReports();
+        msg += sent ? ' · ส่งรายงานไป Google Sheet แล้ว' : ' · ส่งรายงานไม่ได้ ไปที่ตั้งค่าเพื่อส่งอีกครั้ง';
+      }
+      toast(msg, null);
     } catch (e) {
       toast('จบเกมไม่สำเร็จ: ' + errMsg(e) + ' ข้อมูลยังอยู่ ลองใหม่เมื่อออนไลน์', null);
     }
+    ui.busy = null; render();
+  }
+
+  /* ---------- Google Sheet report (Apps Script web app, see tools/google-sheet-report.gs) ---------- */
+  var SHEET_KEY = 'bmm-sheet', QUEUE_KEY = 'bmm-sheet-queue';
+  function sheetCfg() { try { return JSON.parse(localStorage.getItem(SHEET_KEY) || 'null') || { url: '', token: '' }; } catch (e) { return { url: '', token: '' }; } }
+  function saveSheetCfg(c) { try { localStorage.setItem(SHEET_KEY, JSON.stringify(c)); } catch (e) { } }
+  function sheetQueue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { return []; } }
+  function saveQueue(q) { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) { } }
+  function hhmm(ms) { if (!ms) return ''; try { return new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }); } catch (e) { return ''; } }
+  function buildReport() {
+    var RT = A.ratings(S.done, S.players, S.adj), map = byId();
+    var nm = function (id) { return map[id] ? map[id].name : '-'; };
+    return {
+      nightId: S.sessionId, date: todayISO(), label: S.title || todayTitle(), matchCount: S.done.length,
+      players: S.players.filter(function (p) { return RT.G[p.id] > 0; }).map(function (p) {
+        return { name: p.name, level: LV_LABEL[p.level || 'I'], played: RT.G[p.id], won: RT.W[p.id], lost: RT.G[p.id] - RT.W[p.id], mmrStart: Math.round(A.startOf(p)), mmrEnd: Math.round(RT.R[p.id]) };
+      }).sort(function (a, b) { return b.mmrEnd - a.mmrEnd; }),
+      matches: S.done.map(function (m, i) {
+        return { no: i + 1, court: (m.court || 0) + 1, mode: MODE_LABEL[m.mode || 'normal'], teamA: m.t[0].map(nm).join(' + '), teamB: m.t[1].map(nm).join(' + '), winner: m.w === 0 ? 'A' : 'B', start: hhmm(m.at), end: hhmm(m.end) };
+      }),
+      ranking: S.players.map(function (p) { return { name: p.name, level: LV_LABEL[p.level || 'I'], mmr: Math.round(RT.R[p.id]), career: RT.C[p.id] }; })
+        .sort(function (a, b) { return b.mmr - a.mmr; })
+    };
+  }
+  async function postReport(body, cfg) {
+    var res = await fetch(cfg.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ token: cfg.token }, body)) });
+    var out = await res.json();
+    if (!out || !out.ok) throw new Error((out && out.error) || 'Google Sheet ตอบกลับไม่สำเร็จ');
+    return out;
+  }
+  async function flushReports() {
+    var cfg = sheetCfg(), q = sheetQueue();
+    if (!cfg.url || !q.length) return 0;
+    var sent = 0, rest = [];
+    for (var i = 0; i < q.length; i++) {
+      try { await postReport(q[i], cfg); sent++; if (q[i].nightId) DB.markExported(q[i].nightId).catch(function () { }); }
+      catch (e) { rest.push(q[i]); }
+    }
+    saveQueue(rest);
+    return sent;
+  }
+  function randomToken() {
+    var a = new Uint8Array(18); crypto.getRandomValues(a);
+    return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  async function downloadAll() {
+    ui.busy = 'กำลังเตรียมไฟล์…'; render();
+    try {
+      var data = await DB.exportAll();
+      var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'badminton-backup-' + todayISO() + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+      toast('ดาวน์โหลดข้อมูลแล้ว ' + data.players.length + ' คน ' + data.matches.length + ' แมตช์', null);
+    } catch (e) { toast('ดาวน์โหลดไม่ได้: ' + errMsg(e), null); }
     ui.busy = null; render();
   }
   async function importOld(text) {
@@ -517,13 +671,36 @@
     var a = t.dataset.act;
     if (a === 'logout') { DB.signOut().then(function () { location.reload(); }); return; }
     if (a === 'reload') { location.reload(); return; }
+    if (a === 'forgot') { showGate(forgotHtml()); return; }
+    if (a === 'tologin') { showGate(loginHtml()); return; }
     if (!S) return;
     var ci = +t.dataset.ci, before = JSON.stringify(S), msg = null, snap = before;
     if (a !== 'undo' && a !== 'tab') ui.toast = null;
     if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; try { window.scrollTo(0, 0); } catch (x) { } }
     else if (a === 'sync') { if (sync.dirty) runSync(); }
     else if (a === 'board') { S.board = !S.board; ui.sel = null; }
-    else if (a === 'undo') { if (ui.toast && ui.toast.snap) { var keepDays = S.days; S = JSON.parse(ui.toast.snap); S.days = keepDays; A.normalize(S); ui.sel = null; } ui.toast = null; }
+    else if (a === 'undo') {
+      var step = ui.undos.pop();
+      if (step) {
+        var keep = { days: S.days, sessionId: S.sessionId, title: S.title };
+        S = JSON.parse(step.snap); S.days = keep.days; S.sessionId = keep.sessionId; S.title = keep.title;
+        A.normalize(S); ui.sel = null;
+        toast('ย้อนกลับแล้ว: ' + step.label, null);
+      } else ui.toast = null;
+    }
+    else if (a === 'gentoken') { var ti = $('sheetToken'); if (ti) ti.value = randomToken(); return; }
+    else if (a === 'copytoken') {
+      var tv = ($('sheetToken') || {}).value || '';
+      if (!tv) { toast('ยังไม่มีรหัส กดสร้างรหัสใหม่ก่อน', null); return; }
+      navigator.clipboard.writeText(tv).then(function () { toast('คัดลอกรหัสแล้ว นำไปวางในสคริปต์ตรง TOKEN', null); }, function () { var el = $('sheetToken'); el.focus(); el.select(); toast('คัดลอกอัตโนมัติไม่ได้ เลือกข้อความแล้วคัดลอกเอง', null); });
+      return;
+    }
+    else if (a === 'flushsheet') {
+      ui.busy = 'กำลังส่งรายงาน…'; render();
+      flushReports().then(function (n) { ui.busy = null; toast(n ? 'ส่งรายงานแล้ว ' + n + ' คืน' : 'ยังส่งไม่ได้ ตรวจลิงก์ รหัส และอินเทอร์เน็ต', null); render(); });
+      return;
+    }
+    else if (a === 'export') { downloadAll(); return; }
     else if (a === 'win') { var c = S.live[ci], s = +t.dataset.s; if (c) c.w = c.w === s ? null : s; }
     else if (a === 'save') { if (A.saveResult(S, ci)) msg = 'บันทึกผลสนาม ' + (ci + 1) + ' แล้ว สนามว่าง รอสุ่มคู่ใหม่'; ui.sel = null; }
     else if (a === 'draw') { if (A.drawCourt(S, ci, Math.random)) msg = 'สุ่มลงสนาม ' + (ci + 1) + ' แล้ว'; ui.sel = null; }
@@ -553,7 +730,10 @@
     else if (a === 'edit-cancel') ui.editId = null;
     else if (a === 'rank-reset') { if (confirmTap('rank')) { S.players.forEach(function (p) { S.adj.push({ at: S.done.length, id: p.id, to: A.LV[p.level || 'I'] }); }); msg = 'รีเซ็ต MMR ตามระดับแล้ว'; } }
     else if (a === 'hflip') { var m = S.done[+t.dataset.i]; if (m) { m.w = 1 - m.w; msg = 'สลับผู้ชนะแมตช์ ' + (+t.dataset.i + 1) + ' แล้ว คิด MMR ใหม่ให้แล้ว'; } }
-    else if (a === 'hdel') { var di = +t.dataset.i; S.done.splice(di, 1); S.adj.forEach(function (x) { if (x.at > di) x.at--; }); msg = 'ลบแมตช์แล้ว'; }
+    else if (a === 'hdel') {
+      var di = +t.dataset.i;
+      if (confirmTap('hdel' + di)) { S.done.splice(di, 1); S.adj.forEach(function (x) { if (x.at > di) x.at--; }); msg = 'ลบแมตช์ ' + (di + 1) + ' แล้ว'; }
+    }
     else if (a === 'end') { if (confirmTap('end')) { endDay(); return; } }
     else if (a === 'reset') { if (confirmTap('reset')) { A.resetGame(S); msg = 'เริ่มเกมใหม่แล้ว MMR กลับตามระดับ'; } }
     if (msg) toast(msg, snap);
@@ -564,7 +744,14 @@
     var t = e.target; if (!t.dataset || !S) return;
     var a = t.dataset.act;
     if (a === 'toggle') setActive(+t.dataset.id, t.checked);
-    else if (a === 'level') { var p = A.findP(S, +t.dataset.id); if (p) { p.level = t.value; p.start = A.LV[t.value]; } }
+    else if (a === 'level') {
+      var p = A.findP(S, +t.dataset.id);
+      if (p) {
+        p.level = t.value; p.start = A.LV[t.value];
+        // saved straight away too, so it sticks even before tonight is opened
+        DB.updatePlayer(p.id, { level: p.level, start_mmr: p.start }).catch(function () { });
+      }
+    }
     else if (a === 'boardsw') S.board = t.checked;
     else return;
     changed(); render();
@@ -572,14 +759,44 @@
   document.addEventListener('submit', async function (e) {
     var f = e.target; e.preventDefault();
     if (f.id === 'loginForm') {
-      var btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'กำลังเข้าสู่ระบบ…';
+      var btn = f.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'กำลังเข้าสู่ระบบ…';
       try { var u = await DB.signIn($('email').value.trim(), $('password').value); await startFor(u); }
       catch (err) { showGate(loginHtml('เข้าสู่ระบบไม่ได้: ' + errMsg(err))); }
+      return;
+    }
+    if (f.id === 'forgotForm') {
+      var em = $('femail').value.trim();
+      try { await DB.resetPassword(em, location.origin + location.pathname); showGate(forgotHtml(null, 'ส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่ ' + em + ' แล้ว เปิดอีเมลบนเครื่องนี้แล้วกดลิงก์')); }
+      catch (err) { showGate(forgotHtml('ส่งไม่ได้: ' + errMsg(err))); }
+      return;
+    }
+    if (f.id === 'recoverForm') {
+      var p1 = $('rpw').value, p2 = $('rpw2').value;
+      if (p1.length < 8) { showGate(recoverHtml('รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร')); return; }
+      if (p1 !== p2) { showGate(recoverHtml('รหัสผ่านสองช่องไม่ตรงกัน')); return; }
+      try { var ru = await DB.updatePassword(p1); await startFor(ru); toast('ตั้งรหัสผ่านใหม่แล้ว', null); }
+      catch (err) { showGate(recoverHtml('ตั้งรหัสผ่านไม่ได้: ' + errMsg(err))); }
       return;
     }
     if (!S) return;
     if (f.id === 'addForm') { await checkIn($('nameIn').value); }
     else if (f.id === 'importForm') { await importOld($('impText').value); }
+    else if (f.id === 'pwForm') {
+      var np = $('newPw').value;
+      if (np.length < 8) { toast('รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร', null); return; }
+      try { await DB.updatePassword(np); $('newPw').value = ''; toast('เปลี่ยนรหัสผ่านแล้ว', null); }
+      catch (err) { toast('เปลี่ยนรหัสผ่านไม่ได้: ' + errMsg(err), null); }
+    }
+    else if (f.id === 'sheetForm') {
+      var cfg = { url: $('sheetUrl').value.trim(), token: $('sheetToken').value.trim() };
+      saveSheetCfg(cfg);
+      if (!cfg.url) { toast('ลบการตั้งค่า Google Sheet แล้ว', null); render(); return; }
+      if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(cfg.url)) { toast('ลิงก์ต้องขึ้นต้นด้วย https://script.google.com/', null); return; }
+      ui.busy = 'กำลังส่งทดสอบ…'; render();
+      try { await postReport({ test: true }, cfg); toast('เชื่อม Google Sheet สำเร็จ', null); }
+      catch (err) { toast('ส่งทดสอบไม่ผ่าน: ' + errMsg(err) + ' ตรวจลิงก์ รหัส และการ deploy แบบ Anyone', null); }
+      ui.busy = null; render();
+    }
     else if (f.id === 'mmrForm') {
       var val = parseInt($('mmrIn').value, 10);
       if (!isNaN(val)) {
@@ -593,6 +810,5 @@
     var ae = document.activeElement;
     if (S && ui.tab === 'play' && !ui.busy && !(ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName))) render();
   }, 30000);
-  try { $('date').textContent = thaiDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long' }); } catch (e) { }
   boot();
 })();

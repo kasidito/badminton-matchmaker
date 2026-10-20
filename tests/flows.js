@@ -142,8 +142,10 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-tab=sum]');
   const before = (await db(page)).matches.length;
   await page.click('[data-act=hdel][data-i="0"]');
+  check('first tap on delete only asks to confirm', (await page.textContent('[data-act=hdel][data-i="0"]')).includes('กดอีกครั้ง') && (await db(page)).matches.length === before);
+  await page.click('[data-act=hdel][data-i="0"]');
   await saved(page);
-  check('deleting a match updates DB', (await db(page)).matches.length === before - 1);
+  check('second tap deletes the match and DB follows', (await db(page)).matches.length === before - 1);
   check('summary fits on a phone', await noSideScroll(page));
 
   // board mode hides controls
@@ -157,7 +159,7 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-act=mode][data-ci="0"]');
   await saved(page);
   d = await db(page);
-  check('if the night was closed elsewhere, the app opens a new one and keeps saving', d.sessions.filter(s => s.status === 'open').length === 1 && d.sessions.length === 2);
+  check('if the night was closed elsewhere, the app opens a new one and keeps saving', d.sessions.filter(s => s.status === 'open').length === 1 && d.sessions.length === 2, JSON.stringify(d.sessions.map(s => s.status)));
 
   // reset
   await page.click('#setBtn');
@@ -167,6 +169,110 @@ const viewText = page => page.textContent('#view');
   d = await db(page);
   check('reset clears tonight and puts MMR back to levels', d.matches.filter(m => m.session_id === d.sessions.find(s => s.status === 'open').id).length === 0 && d.players.find(p => p.id === 2).start_mmr === 1700);
   check('no script errors on phone run', page.errors.length === 0, page.errors.join(' | '));
+
+  /* ---------- new in this release ---------- */
+  const p4 = await newPage(browser, base, 1180, 820);
+  await p4.evaluate(() => localStorage.clear());
+  await p4.reload();
+  await signIn(p4);
+  // a night opened on an earlier day but never used moves to today
+  check('unused night from an earlier day is not left with an old date', (await p4.textContent('#date')).includes('ยังไม่เปิดคืน') || (await p4.textContent('#date')).startsWith('คืน'));
+  await p4.click('[data-tab=people]');
+  await p4.click('[data-act=checkall]');
+  await p4.click('[data-tab=play]');
+  const hint = await p4.textContent('.slot .next');
+  check('empty court shows who goes on next', hint && hint.includes('ถัดไป'), hint);
+  check('only the first empty court promises names', (await p4.$$('.slot .next')).length === 1 && (await p4.textContent('#view')).includes('คิวต่อจากสนาม 1'));
+  await p4.click('[data-act=draw][data-ci="0"]');
+  const firstFour = hint.replace('ถัดไป', '').split(/,\s*/).map(x => x.trim().replace(/โหมดนี้.*$/, '')).filter(Boolean);
+  const court1 = await p4.$$eval('[data-ci="0"].pl', els => els.map(e => e.childNodes[0].textContent));
+  check('the hinted players are exactly the ones drawn onto court 1', firstFour.length === 4 && firstFour.every(n => court1.includes(n)), JSON.stringify({ firstFour, court1 }));
+  await p4.click('.fill-inline');
+
+  // multi-step undo from the header, long after the toast is gone
+  await p4.click('[data-act=win][data-ci="0"][data-s="0"]');
+  await p4.click('[data-act=save][data-ci="0"]');
+  await p4.click('[data-act=draw][data-ci="0"]');
+  await p4.waitForTimeout(7500);                 // toast has expired
+  // steps so far: draw court 1, fill the rest, save court 1, draw court 1
+  check('toast has gone but header undo is available', !(await p4.isVisible('#toast')) && !(await p4.isDisabled('#undoBtn')));
+  await p4.click('#undoBtn');                    // undo the draw
+  check('undo 1 empties court 1 again', (await p4.$('[data-act=draw][data-ci="0"]')) !== null);
+  await p4.click('#undoBtn');                    // undo the save
+  check('undo 2 brings back the result', (await p4.textContent('.roundhead')).includes('จบแล้ว 0') && (await p4.$('.team.win')) !== null);
+  await p4.click('#undoBtn');                    // undo the fill
+  check('undo 3 removes the courts filled together', (await p4.$$('.match')).length === 1);
+  await p4.click('#undoBtn');                    // undo the first draw
+  check('undo 4 goes back to empty courts', (await p4.$$('.match')).length === 0);
+  check('undo stack is now empty', await p4.isDisabled('#undoBtn') || (await p4.getAttribute('#undoBtn', 'title')).includes('ย้อนกลับ'));
+
+  // Google Sheet report on End day (Apps Script faked with a route)
+  const sheetCalls = [];
+  await p4.route('https://script.google.com/**', async r => {
+    const body = JSON.parse(r.request().postData());
+    sheetCalls.push(body);
+    await r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body.token === 'abc123' ? { ok: true } : { ok: false, error: 'bad token' }) });
+  });
+  await p4.click('#setBtn');
+  await p4.fill('#sheetUrl', 'https://script.google.com/macros/s/FAKE/exec');
+  await p4.fill('#sheetToken', 'wrong');
+  await p4.click('#sheetForm button[type=submit]');
+  await p4.waitForFunction(() => !document.querySelector('.busy'));
+  check('test ping with a wrong token reports the problem', (await p4.textContent('#toast')).includes('ไม่ผ่าน'));
+  await p4.fill('#sheetToken', 'abc123');
+  await p4.click('#sheetForm button[type=submit]');
+  await p4.waitForFunction(() => !document.querySelector('.busy'));
+  check('test ping with the right token succeeds', (await p4.textContent('#toast')).includes('สำเร็จ'));
+  await p4.click('[data-tab=play]');
+  await p4.click('.fill-inline');
+  await p4.click('[data-act=win][data-ci="0"][data-s="1"]');
+  await p4.click('[data-act=save][data-ci="0"]');
+  await p4.click('#setBtn');
+  await p4.click('[data-act=end]'); await p4.click('[data-act=end]');
+  await p4.waitForFunction(() => !document.querySelector('.busy'));
+  const rep = sheetCalls.find(c => c.nightId);
+  check('End day sends the night to Google Sheet', rep && rep.matchCount === 1 && rep.matches.length === 1 && rep.players.length === 4 && rep.ranking.length >= 13, JSON.stringify(rep && { m: rep.matchCount, p: rep.players.length }));
+  check('End day message confirms the report', (await p4.textContent('#toast')).includes('Google Sheet แล้ว'));
+  check('night is marked as exported', (await db(p4)).sessions.some(x => x.sheet_exported_at));
+
+  // download all data
+  const [dl] = await Promise.all([p4.waitForEvent('download'), p4.click('[data-act=export]')]);
+  const file = JSON.parse(fs.readFileSync(await dl.path(), 'utf8'));
+  check('download contains every table', ['players', 'sessions', 'matches', 'match_players', 'session_players', 'rating_adjustments'].every(k => Array.isArray(file[k])) && file.matches.length >= 1);
+
+  // change password
+  await p4.fill('#newPw', 'short');
+  await p4.click('#pwForm button[type=submit]');
+  check('short new password is refused by the form', !(await p4.$eval('#newPw', el => el.checkValidity())) && !(await db(p4)).passwordChanged);
+  await p4.fill('#newPw', 'a-much-longer-pass');
+  await p4.click('#pwForm button[type=submit]');
+  await p4.waitForSelector('text=เปลี่ยนรหัสผ่านแล้ว');
+  check('password change goes to Supabase', (await db(p4)).passwordChanged === 'a-much-longer-pass');
+  check('no script errors on new-feature run', p4.errors.length === 0, p4.errors.join(' | '));
+
+  // forgot password and recovery link
+  const p5 = await newPage(browser, base, 390, 844);
+  await p5.evaluate(() => { localStorage.clear(); });
+  await p5.reload();
+  await p5.click('[data-act=forgot]');
+  await p5.fill('#femail', 'admin@example.com');
+  await p5.click('#forgotForm button[type=submit]');
+  await p5.waitForSelector('text=ส่งลิงก์ตั้งรหัสผ่านใหม่');
+  const reqs = await p5.evaluate(() => window.__resetRequests);
+  check('forgot password asks Supabase to email a link back to this page', reqs && reqs[0].email === 'admin@example.com' && reqs[0].redirectTo.startsWith(base));
+  await p5.evaluate(() => { const d = window.__fakeDb(); d.auth = { user: { id: 'u1', email: 'admin@example.com' } }; localStorage.setItem('fake-supabase-db', JSON.stringify(d)); });
+  await p5.goto(base + '?from=email#access_token=x&type=recovery');   // a fresh page load, as when opening the email link
+  await p5.waitForSelector('#recoverForm');
+  await p5.fill('#rpw', 'brand-new-pass');
+  await p5.fill('#rpw2', 'different-pass');
+  await p5.click('#recoverForm button[type=submit]');
+  check('recovery screen catches mismatched passwords', (await p5.textContent('.err')).includes('ไม่ตรงกัน'));
+  await p5.fill('#rpw', 'brand-new-pass');
+  await p5.fill('#rpw2', 'brand-new-pass');
+  await p5.click('#recoverForm button[type=submit]');
+  await p5.waitForSelector('#gate', { state: 'hidden' });
+  check('after setting a new password the admin lands in the app', (await db(p5)).passwordChanged === 'brand-new-pass');
+  check('no script errors on password run', p5.errors.length === 0, p5.errors.join(' | '));
 
   /* ---------- import a backup from the old single-page app ---------- */
   const old = {

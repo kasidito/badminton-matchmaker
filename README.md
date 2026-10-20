@@ -13,6 +13,11 @@ Built for one admin on an iPad or phone at the court. Players do not log in.
 - **Court modes**: Normal, Competitive (close ratings) and Social (strong and new players mixed, half MMR weight), set per court.
 - **MMR**: Elo-based, team aware. Starting level sets the first rating (beginner 1300, intermediate 1500, advanced 1700).
 - **History**: fix or delete any of tonight's results and ratings recalculate. "End day" closes the night and carries MMR forward.
+- **Undo**: every draw, save, swap, reset and MMR edit can be undone step by step from the header, for the whole night.
+- **Next up**: the first empty court shows the 4 people the next draw will take.
+- **Google Sheet report**: on End day the night's results, every match and the latest ranking are appended to a Google Sheet.
+- **Backups**: Settings → ดาวน์โหลดข้อมูลทั้งหมด saves every table as a JSON file.
+- **Password**: forgot-password email and change-password in Settings.
 - **Works offline**: every change is kept on the device and saved to Supabase as soon as the connection is back. The header shows the save status.
 - **iPad layouts** for portrait and landscape, plus a big-text board mode for a screen beside the court.
 
@@ -56,9 +61,20 @@ Project `badminton-matchmaker` (Singapore, `vhvlhuimelqsnglhayxs`).
    insert into public.admins (user_id)
    select id from auth.users where email = 'you@example.com';
    ```
-4. Authentication → URL Configuration: set the Site URL to the GitHub Pages address.
+4. Authentication → URL Configuration: set **Site URL** to `https://kasidito.github.io/badminton-matchmaker/` and add the same address under **Redirect URLs**. The forgot-password email links back here.
 
 Row level security allows nothing unless the signed-in user is in `public.admins`. The key in `js/config.js` is the publishable key, which is meant to be public. Never commit the `service_role` key.
+
+### Google Sheet report
+
+1. Create a spreadsheet (sheets.new), e.g. "รายงานก๊วนแบด".
+2. Extensions → Apps Script. Replace the code with `tools/google-sheet-report.gs`.
+3. In the app: Settings → รายงาน Google Sheet → สร้างรหัสใหม่ → คัดลอกรหัส. Paste it into the script's `TOKEN` line and save.
+4. In Apps Script: Deploy → New deployment → type **Web app**, Execute as **Me**, Who has access **Anyone** → Deploy, allow access, copy the Web app URL.
+5. In the app: paste the URL → บันทึกและส่งทดสอบ. "เชื่อม Google Sheet สำเร็จ" means it works.
+
+The URL and token are stored on that device only. If sending fails on End day, the report waits on the device; Settings shows ส่งรายงานที่ค้าง to retry. Sending the same night twice is ignored by the script.
+If you change the script later, use Deploy → Manage deployments → edit → New version, so the URL stays the same.
 
 ### Hosting on GitHub Pages
 
@@ -67,7 +83,7 @@ Repository → Settings → Pages → Deploy from a branch → `main` / root. Th
 ## Tests
 
 ```bash
-npm test              # unit tests for js/algo.js (Node 18+)
+npm test              # unit tests: js/algo.js and the Apps Script (Node 18+)
 npm run e2e           # both UI runs against the fake Supabase (needs Playwright + Chromium)
                       #   tests/smoke.js  main evening on iPad landscape
                       #   tests/flows.js  phone width, undo, reset, import, late arrival, non-admin

@@ -1,13 +1,15 @@
 # Roadmap
 
-Status as of 20 Oct 2026. Owner decides order; update this file when something ships or changes.
+Status as of 20 Oct 2026 (evening). Owner decides order; update this file when something ships or changes.
 
 ## Now: get to UAT
 
 | # | Task | Who | Status |
 |---|---|---|---|
 | 1 | Turn on GitHub Pages | Owner | Done |
-| 2 | Sign in on the iPad, check the layout loads correctly | Owner | Waiting |
+| 2 | Sign in on the iPad, check the layout loads correctly | Owner | Done (layout bug fixed) |
+| 2b | Supabase → Authentication → URL Configuration: Site URL + Redirect URL = the Pages address (for forgot password) | Owner | Waiting |
+| 2c | Set up the Google Sheet report (README → Google Sheet report) | Owner | Waiting |
 | 3 | Wed 21 Oct: run the night on the old app, press "คัดลอกข้อมูลสำรอง" at the end | Owner | Waiting |
 | 4 | Import that backup into the new app (Settings → นำเข้าจากแอปเดิม) | Owner + Claude | After 3 |
 | 5 | Run `docs/UAT.md` on the iPad and report issues | Owner | After 2 |
@@ -18,11 +20,11 @@ Status as of 20 Oct 2026. Owner decides order; update this file when something s
 
 | # | Item | Size | Notes |
 |---|---|---|---|
-| 1 | Backup + report to Google Sheet on End day | M | Free plan has no backups. Sheet doubles as the report. Add a weekly export to GitHub too. |
-| 2 | Forgot password | S | Needs Supabase Site URL set to the Pages address. |
-| 3 | Open the night at first check-in, show the night's date in the header | S | Today a session opens at sign-in, so its title can be the wrong day. |
-| 4 | Multi-step undo without a time limit; confirm before deleting a match | S | |
-| 5 | Show the next 4 on an empty court | S | |
+| 1 | Backup + report to Google Sheet on End day | M | **Shipped.** Plus a download-all-data button. Weekly automatic export to GitHub not done (would need the service key as a GitHub secret). |
+| 2 | Forgot password | S | **Shipped**, plus change password. Needs Supabase Site URL set (Now 2b). |
+| 3 | Open the night at first check-in, show the night's date in the header | S | **Shipped.** |
+| 4 | Multi-step undo without a time limit; confirm before deleting a match | S | **Shipped** (header undo button, 30 steps). |
+| 5 | Show the next 4 on an empty court | S | **Shipped.** Also fixed: on-screen queue and draw now break ties the same way. |
 | 6 | **OpenSkill ratings** | M | Owner approved. Keep Elo for 4–6 weeks first, then compute both from `match_players` history and compare before switching. Show levels, not raw numbers, to avoid new players feeling penalised. |
 
 ## Later / ideas

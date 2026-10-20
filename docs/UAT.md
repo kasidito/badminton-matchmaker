@@ -61,7 +61,17 @@ Tester: ______  Date: ______  Device: ______
 - [ ] Board mode (screen icon) shows big names and hides buttons
 - [ ] Dark mode is readable
 
-## 9. Import from the old app
+## 9. New in this release
+- [ ] Signing in before club night shows "ยังไม่เปิดคืน" in the header; the first check-in changes it to tonight's date
+- [ ] The first empty court shows "ถัดไป" with 4 names; สุ่มลงสนามนี้ puts exactly those 4 on that court
+- [ ] The undo button in the header steps back several actions, even after the bottom message has gone
+- [ ] ลบแมตช์นี้ needs a second tap
+- [ ] Google Sheet: "บันทึกและส่งทดสอบ" says connected; after End day the sheet has the night, players, matches and ranking
+- [ ] Settings → ดาวน์โหลดข้อมูลทั้งหมด downloads a .json file
+- [ ] Settings → เปลี่ยนรหัสผ่าน works; sign out and in with the new password
+- [ ] Sign-in → ลืมรหัสผ่าน sends an email; its link opens the app and lets you set a new password
+
+## 10. Import from the old app
 - [ ] Old app: Settings → คัดลอกข้อมูลสำรอง; new app: Settings → นำเข้าจากแอปเดิม → นำเข้า
 - [ ] Players are matched by name, new ones are added, matches and past days appear
 

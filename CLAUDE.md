@@ -14,7 +14,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 
 ## Matching rules (`js/algo.js`)
 
-1. **Who plays next:** fewest finished matches this night (`base + played`), then longest waiting (`freeSince`), then random. This order always wins; modes may only bend it inside the flex window.
+1. **Who plays next:** fewest finished matches this night (`base + played`), then longest waiting (`freeSince`), then a random number `p.qr` drawn when the player became free (check-in or result saved). Using a stored number keeps the on-screen queue and the draw identical. This order always wins; modes may only bend it inside the flex window.
 2. **Late arrivals / re-check-in:** `base` is raised so they start level with the lowest active player.
 3. **Flex window** (`S.flex`, default 4): Competitive and Social courts may pick from the first `4*k + flex` people in the queue. Skipping someone costs 10, and skipping someone with fewer matches costs 30 per match of difference. Normal courts never use flex.
 4. **Team split:** among the 3 possible pairings, minimise repeat partners (weight 3x) and repeat opponents, avoid the pairing just redrawn, and balance team MMR (`/30` normal, `/15` competitive and social).
@@ -47,12 +47,16 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 
 ## Sync (`js/app.js`, `js/db.js`)
 
+- **A night (session) opens lazily**: signing in does not create one. The first change that belongs to a night (check-in, draw, result, MMR edit) creates it in `runSync` (`openOrCreateSession`; on unique-violation it joins the open night). End day leaves no open night. An open night from an earlier date that was never used is re-dated on sign-in.
 - Every change: `changed()` → write local cache (`bmm-cache-<userId>`, flag `dirty`) → debounce 1.2 s → `sync_session` RPC.
 - `sync_session` rewrites the night's `session_players`, `matches`, `match_players`, `rating_adjustments` and the `state` snapshot in one transaction. It is idempotent, so retrying is always safe.
 - Failure: keep `dirty`, retry every 10 s and on `online`. The header pill shows the status; tapping it retries.
 - Boot: an unsynced local cache for the same session beats the server snapshot.
 - If the session was closed elsewhere (error code `P0002`), open a new session and retry.
-- Adding or removing members needs to be online (inserts need DB ids).
+- Adding or removing members needs to be online (inserts need DB ids). Level changes are also written straight to `players` so they stick before a night is open.
+- **Undo** is an in-memory stack of state snapshots (`ui.undos`, max 30), pushed by `toast(msg, snapshot)`. Undo keeps the current `sessionId`, `title` and `days`. Cleared on End day.
+- **Google Sheet report**: `buildReport()` before closing; queued in localStorage (`bmm-sheet-queue`) and posted as `text/plain` JSON to the Apps Script web app (`tools/google-sheet-report.gs`, idempotent per night id). URL and token live in localStorage (`bmm-sheet`), per device. Success sets `sessions.sheet_exported_at`.
+- **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address.
 
 ## Database
 
@@ -64,8 +68,8 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 ## Commands
 
 ```bash
-npm test          # node --test tests/algo.test.js
-npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases) against tests/fake-supabase.js
+npm test          # node --test tests/algo.test.js tests/sheet-script.test.js
+npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases, undo, sheet, password) against tests/fake-supabase.js
 ```
 
 When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` to match, and add a migration file. Never edit an applied migration.

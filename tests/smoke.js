@@ -42,7 +42,8 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   await page.fill('#password', 'correct-horse');
   await page.click('#loginForm button');
   await page.waitForSelector('#app:not([hidden])');
-  check('admin signs in and an open session is created', (await db()).sessions.filter(s => s.status === 'open').length === 1);
+  check('admin signs in; no night is opened until someone checks in', (await db()).sessions.length === 0);
+  check('header says tonight is not opened yet', (await page.textContent('#date')).includes('ยังไม่เปิดคืน'));
   check('loading screen is gone after sign-in', !(await page.isVisible('#gate')));
   check('empty toast bar is not shown', !(await page.isVisible('#toast')));
 
@@ -54,6 +55,9 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   const t1 = await page.textContent('#toast');
   check('pasting the LINE post checks in 13 and adds 1 new player', t1.includes('เช็กอิน 13') && t1.includes('เพิ่มใหม่ 1'), t1);
   check('new player is saved to the players table', (await db()).players.some(p => p.name === 'มิว'));
+  await page.waitForSelector('#syncPill.saved', { timeout: 8000 });
+  check('first check-in opens tonight', (await db()).sessions.filter(s => s.status === 'open').length === 1);
+  check('header shows tonight\'s date', (await page.textContent('#date')).startsWith('คืน'));
 
   await page.click('[data-tab=play]');
   await page.click('.fill-inline');
@@ -105,7 +109,7 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   await page.waitForFunction(() => !document.querySelector('.busy'));
   await waitSaved();
   d = await db();
-  check('end of day closes the session and opens a new one', d.sessions.filter(s => s.status === 'closed').length === 1 && d.sessions.filter(s => s.status === 'open').length === 1);
+  check('end of day closes the night and leaves the next one unopened', d.sessions.filter(s => s.status === 'closed').length === 1 && d.sessions.filter(s => s.status === 'open').length === 0);
   check('MMR carried into players table', d.players.some(p => p.start_mmr !== 1500));
   await page.click('[data-tab=sum]');
   check('finished day appears in history', (await page.textContent('#view')).includes('เกมที่จบแล้ว (1)'));

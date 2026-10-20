@@ -76,7 +76,9 @@
     var on = {}; liveIds(T).forEach(function (id) { on[id] = 1; });
     var st = stats(T.done, T.players);
     return T.players.filter(function (p) { return p.active && !on[p.id]; }).map(function (p) {
-      return { id: p.id, credit: (p.base || 0) + st.played[p.id], since: p.freeSince || 0, r: rnd ? rnd() : p.id };
+      // ties are broken by a random number drawn when the player became free (p.qr), so the order
+      // shown on screen and the order a draw uses are the same
+      return { id: p.id, credit: (p.base || 0) + st.played[p.id], since: p.freeSince || 0, r: p.qr != null ? p.qr : (rnd ? rnd() : p.id) };
     }).sort(function (a, b) { return a.credit - b.credit || a.since - b.since || a.r - b.r; });
   }
   function teamCost(t, mode, P, O, A, RM) {
@@ -183,7 +185,7 @@
     if (!hasRes(c) || isStale(T, c)) return false;
     var ts = Date.now();
     T.done.push({ t: c.t, w: c.w, mode: (T.courts[ci] || {}).mode || 'normal', court: ci, at: c.at || ts, end: ts });
-    c.t[0].concat(c.t[1]).forEach(function (id) { var p = findP(T, id); if (p) p.freeSince = ts; });
+    c.t[0].concat(c.t[1]).forEach(function (id) { var p = findP(T, id); if (p) { p.freeSince = ts; p.qr = Math.random(); } });
     T.live[ci] = null;
     return true;
   }
