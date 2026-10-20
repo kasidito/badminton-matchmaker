@@ -257,8 +257,7 @@ h2.big{font-size:1.15rem}
   #view .span{grid-column:1/-1}
   .tab-rank .rklist{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px}
   .tab-rank .rklist .rk:nth-child(2){border-top:0}
-  #view.tab-set{display:block;columns:2;column-gap:16px}
-  #view.tab-set>.card{break-inside:avoid;margin-bottom:16px}
+  #view.tab-set{grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;column-gap:18px}
 }
 /* tablet landscape: one-row header with the menu, fill button in the page instead of the dock */
 @media (min-width:1000px){
@@ -331,7 +330,7 @@ body.board .cname{font-size:1.4rem}
 
 /* night banner: facts + who sits out this round */
 .board{position:relative;overflow:hidden;border-radius:22px;padding:16px 18px;background:var(--banner);border:1px solid var(--panel-line);color:var(--on-banner);display:grid;gap:14px}
-.board .wm{position:absolute;right:-30px;top:-34px;width:210px;height:210px;transform:rotate(-28deg);fill:none;stroke:var(--on-banner-line);stroke-width:1.4;stroke-linecap:round;pointer-events:none}
+.board .wm{position:absolute;right:-30px;top:-60px;width:210px;height:210px;transform:rotate(-28deg);fill:none;stroke:var(--on-banner-line);stroke-width:1.4;stroke-linecap:round;pointer-events:none}
 .facts4{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 12px}
 .facts4 .fact{display:grid;gap:2px;align-content:start;min-width:0}
 .facts4 .fact span{font-size:.74rem;color:var(--on-banner-muted)}
@@ -365,3 +364,36 @@ body.board .cname{font-size:1.4rem}
 .lvpick{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .lvpick button{display:grid;justify-items:center;gap:3px;padding:6px 2px;border-radius:12px;border:1.5px solid var(--line-strong);background:var(--surface);color:var(--fg);font-size:.76rem;font-weight:600}
 .lvpick button.on{border-color:var(--accent);background:var(--accent);color:var(--accent-fg)}
+
+/* "sit out the next draw" */
+.restbtn{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border-radius:999px;border:1.5px solid var(--on-banner-line);background:var(--on-banner-fill);color:var(--on-banner);font-weight:700;font-size:.82rem}
+.restbtn.on{background:var(--hi);color:var(--on-hi);border-color:var(--hi)}
+.rest-help{font-size:.8rem;color:var(--on-banner-muted)}
+.chip .ico{width:1em;height:1em}
+.chip.resting{border-style:dashed}
+.chip.pick.resting{background:var(--hi);color:var(--on-hi);border-color:var(--hi);border-style:solid}
+.chip .tag-rest{font-size:.68rem;font-weight:800;background:var(--on-hi);color:var(--hi);border-radius:999px;padding:1px 8px}
+.restline .rl{font-size:.75rem;font-weight:700;color:var(--banner-warn);align-self:center;margin-right:2px}
+.restmark{display:table;margin:2px 0 0 28px;font:700 .66rem var(--font-body);padding:1px 7px;border-radius:999px;background:var(--warn-bg);color:var(--warn-fg);vertical-align:2px}
+
+/* settings: grouped cards, rows like a phone settings list */
+.scol{display:grid;gap:18px;align-content:start;min-width:0}
+.sgroup{display:grid;gap:8px;min-width:0}
+.ghead{display:flex;align-items:center;gap:8px;margin:0 6px;font:700 .82rem var(--font-display);color:var(--muted);letter-spacing:.02em}
+.scard{padding:2px 16px;gap:0}
+.scard>*{border-top:1px solid var(--line)}
+.scard>:first-child{border-top:0}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:10px 14px;flex-wrap:wrap;padding:12px 0;min-height:62px}
+.stext{display:grid;gap:1px;min-width:0;flex:1 1 150px}
+.stext b{font-weight:600;overflow-wrap:anywhere}
+.stext span{font-size:.8rem;color:var(--muted);font-weight:400}
+.sblock{padding:14px 0;display:grid;gap:8px}
+.scard .legend{padding:12px 0 14px}
+.scard .alist{padding:4px 0}
+.scard>.muted,.scard>.err{padding:14px 0}
+.sdetails summary{font:inherit;padding:12px 0;min-height:62px;gap:12px}
+.sdetails summary .ico{color:var(--muted);transition:transform .15s}
+.sdetails[open] summary .ico{transform:rotate(180deg)}
+.sbody{display:grid;gap:10px;padding:0 0 16px}
+.sbody .add>.btn,.sblock.add>.btn{justify-self:start}
+@media (prefers-reduced-motion:reduce){.sdetails summary .ico{transition:none}}

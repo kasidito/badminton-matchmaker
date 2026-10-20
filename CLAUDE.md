@@ -15,7 +15,8 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 ## Matching rules (`js/algo.js`)
 
 1. **Who plays next:** fewest finished matches this night (`base + played`), then longest waiting (`freeSince`), then a random number `p.qr` drawn when the player became free (check-in or result saved). Using a stored number keeps the on-screen queue and the draw identical. This order always wins; modes may only bend it inside the flex window.
-2. **Late arrivals / re-check-in:** `base` is raised so they start level with the lowest active player.
+2. **Rest one round** (`p.rest`, ขอพัก on the banner): the player is left out of `queueOrder`/`freeCount` and the next draw. The flag clears in `fill()` once a draw took someone who was not ahead of them (more matches, or same matches and free no earlier), so they sit out exactly once and come back at the front. Swapping them in by hand also clears it. Can be set for someone on court ("พักตาหน้า").
+2b. **Late arrivals / re-check-in:** `base` is raised so they start level with the lowest active player.
 3. **Flex window** (`S.flex`, default 4): Competitive and Social courts may pick from the first `4*k + flex` people in the queue. Skipping someone costs 10, and skipping someone with fewer matches costs 30 per match of difference. Normal courts never use flex.
 4. **Team split:** among the 3 possible pairings, minimise repeat partners (weight 3x) and repeat opponents, avoid the pairing just redrawn, and balance team MMR (`/30` normal, `/15` competitive and social).
 5. **Modes:** Competitive adds `spread/5` (wants close ratings); Social subtracts `spread/12` (wants a mix).
@@ -81,6 +82,7 @@ When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` 
 
 - Colours come from CSS tokens on `:root` with dark-mode overrides. Never hard-code colours in components.
 - Layout breakpoints: 700px (tablet: courts side by side, banner facts in one row), 760px (two-column tabs), 1000px (landscape: one-row header, no bottom dock).
+- Settings: grouped cards (`.sgroup` > `.ghead` + `.scard` of `.srow` rows) in two fixed columns (`.scol`) from 760px, one column below. Never use CSS columns there: expanding a section must not move cards between columns.
 - Courts tab banner (`.board`): matches done, play time, games per person (fairness), here tonight, then **พักตานี้** chips = the queue in order (first 4 tagged ลงต่อ; tap to swap). There is no separate queue panel any more.
 - Rank rows use `.podium`, not `.top` (`.top` is the header).
 - Look is design C "sports club app" (chosen Oct 2026): font Prompt, navy ink `--accent`, lime `--hi`. Light: pale page, white cards, navy diagonal-stripe `--banner` (`.strip`, `.hero`) and `--panel` (court) with white team cards. Dark: owner asked for **no stripes**; banners and court use soft navy gradients.

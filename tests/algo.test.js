@@ -153,3 +153,15 @@ test('bird ranks: promote at the floor, drop only after falling 25 below it', ()
   // every starting level lands in its own bird
   assert.deepStrictEqual(['B', 'N', 'I', 'A', 'P'].map(l => A.BIRDS[A.birdIndex(A.LV[l])].k), ['chick', 'sparrow', 'pigeon', 'hawk', 'eagle']);
 });
+
+test('a player asked to rest sits out exactly one draw, then is first in line', () => {
+  const T = session(9, ['normal', 'normal'], 0);
+  const first = A.queueOrder(T, null)[0].id;
+  A.toggleRest(T, first);
+  assert.ok(!A.queueOrder(T, null).some(x => x.id === first), 'resting player is not in the queue');
+  assert.strictEqual(A.freeCount(T), 8);
+  A.drawCourt(T, 0, Math.random);
+  assert.ok(!A.liveIds(T).includes(first), 'not drawn');
+  assert.strictEqual(A.findP(T, first).rest, false, 'rest clears after being skipped once');
+  assert.strictEqual(A.queueOrder(T, null)[0].id, first, 'back at the front');
+});

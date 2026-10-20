@@ -82,10 +82,11 @@
     return c.t[0].concat(c.t[1]).some(function (id) { var p = findP(T, id); return !p || !p.active; });
   }
   /* waiting players in priority order: fewest matches, then longest wait */
-  function queueOrder(T, rnd) {
+  /* p.rest = "sit out the next draw": left out of the queue until a draw has skipped them once (see fill) */
+  function queueOrder(T, rnd, withRest) {
     var on = {}; liveIds(T).forEach(function (id) { on[id] = 1; });
     var st = stats(T.done, T.players);
-    return T.players.filter(function (p) { return p.active && !on[p.id]; }).map(function (p) {
+    return T.players.filter(function (p) { return p.active && !on[p.id] && (withRest || !p.rest); }).map(function (p) {
       // ties are broken by a random number drawn when the player became free (p.qr), so the order
       // shown on screen and the order a draw uses are the same
       return { id: p.id, credit: (p.base || 0) + st.played[p.id], since: p.freeSince || 0, r: p.qr != null ? p.qr : (rnd ? rnd() : p.id) };
@@ -167,11 +168,20 @@
     if (T.live.length > T.courts.length) T.live.length = T.courts.length;
   }
   function fill(T, slots, rnd, avoid) {
+    var prio = {}; queueOrder(T, null, true).forEach(function (x) { prio[x.id] = x; });
     var res = planCourts(T, slots, rnd, avoid, liveIds(T));
     var ts = Date.now();
     res.forEach(function (r) { T.live[r.ci] = { t: r.t, w: null, at: ts }; });
+    // a resting player has sat out once a draw took someone who was not ahead of them in the queue
+    // (more matches, or the same matches and free no earlier); ties count as skipped
+    var picked = []; res.forEach(function (r) { picked = picked.concat(r.t[0], r.t[1]); });
+    T.players.forEach(function (p) {
+      var me = prio[p.id]; if (!p.rest || !me) return;
+      if (picked.some(function (id) { var x = prio[id]; return x && (x.credit > me.credit || (x.credit === me.credit && x.since >= me.since)); })) p.rest = false;
+    });
     return res.length;
   }
+  function toggleRest(T, id) { var p = findP(T, id); if (!p || !p.active) return false; p.rest = !p.rest; return true; }
   function drawCourt(T, ci, rnd) { if (T.live[ci] && !isStale(T, T.live[ci])) return 0; T.live[ci] = null; return fill(T, [ci], rnd, null); }
   function redrawCourt(T, ci, rnd) {
     var c = T.live[ci]; T.live[ci] = null;
@@ -188,7 +198,7 @@
   function freeCount(T) {
     var on = {};
     T.live.forEach(function (c) { if (c && !isStale(T, c)) c.t[0].concat(c.t[1]).forEach(function (id) { on[id] = 1; }); });
-    return T.players.filter(function (p) { return p.active && !on[p.id]; }).length;
+    return T.players.filter(function (p) { return p.active && !on[p.id] && !p.rest; }).length;
   }
   function saveResult(T, ci) {
     var c = T.live[ci];
@@ -206,6 +216,7 @@
     function set(x, id) { T.live[x.ci].t[x.s][x.i] = id; T.live[x.ci].w = null; }
     var ia = get(a), ib = get(b);
     if (ia === ib) return false;
+    [a, b].forEach(function (x) { if (x.id != null) { var q = findP(T, x.id); if (q) q.rest = false; } });   // picked by hand: no longer resting
     if (a.id == null) set(a, ib);
     if (b.id == null) set(b, ia);
     return true;
@@ -248,13 +259,13 @@
     var carry = carryForward(T), byId = {};
     carry.forEach(function (c) { byId[c.id] = c; });
     T.days.push(snap);
-    T.players.forEach(function (p) { p.start = byId[p.id].start_mmr; p.games = byId[p.id].career_games; p.base = 0; p.freeSince = 0; });
+    T.players.forEach(function (p) { p.start = byId[p.id].start_mmr; p.games = byId[p.id].career_games; p.base = 0; p.freeSince = 0; p.rest = false; });
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
     return snap;
   }
   function resetGame(T) {
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
-    T.players.forEach(function (p) { p.base = 0; p.start = LV[p.level || 'I']; p.games = 0; p.freeSince = 0; });
+    T.players.forEach(function (p) { p.base = 0; p.start = LV[p.level || 'I']; p.games = 0; p.freeSince = 0; p.rest = false; });
   }
   /* Accepts a pasted LINE sign-up post ("1. ชิน") or a comma/newline list. Returns names. */
   function parseNames(text) {
@@ -277,7 +288,7 @@
   }
 
   var Algo = {
-    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP,
+    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP, toggleRest: toggleRest,
     stats: stats, ratings: ratings, winProb: winProb, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,

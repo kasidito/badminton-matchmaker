@@ -292,8 +292,8 @@
     ui.busy = null; render();
     return ok;
   }
-  function adminsCard() {
-    var h = '<div class="card"><h2>ผู้ดูแลก๊วน</h2>';
+  function adminsBody() {
+    var h = '';
     if (!ui.admins) { loadAdmins(); h += '<span class="muted small">กำลังโหลด…</span>'; }
     else if (ui.admins.error) h += '<p class="err">โหลดรายชื่อไม่ได้: ' + esc(ui.admins.error) + '</p><button class="btn sm" data-act="admins-reload">ลองใหม่</button>';
     else {
@@ -306,13 +306,13 @@
         h += '</div>';
         if (ui.resetId === a.id) h += '<form class="mmr-edit" id="adminResetForm" data-id="' + esc(a.id) + '" autocomplete="off"><input class="field" id="admResetPw" type="text" minlength="8" placeholder="รหัสผ่านใหม่ อย่างน้อย 8 ตัว" aria-label="รหัสผ่านใหม่ของ ' + esc(a.email) + '" required><button class="btn primary" type="submit">ตั้ง</button><button class="btn" type="button" data-act="admin-reset-cancel">ยกเลิก</button></form>';
       });
-      h += '</div><form class="add" id="adminAddForm" autocomplete="off"><b class="small">เพิ่มผู้ดูแล</b>' +
+      h += '</div><form class="add sblock" id="adminAddForm" autocomplete="off"><b class="small">เพิ่มผู้ดูแล</b>' +
         '<input class="field" id="admEmail" type="email" inputmode="email" placeholder="อีเมล" aria-label="อีเมลผู้ดูแลใหม่" required>' +
         '<input class="field" id="admPw" type="text" minlength="8" placeholder="รหัสผ่านเริ่มต้น อย่างน้อย 8 ตัว" aria-label="รหัสผ่านเริ่มต้น">' +
         '<button class="btn primary" type="submit">' + ic('plus') + 'เพิ่มผู้ดูแล</button>' +
         '<p class="muted small">ระบบไม่ส่งอีเมล ให้บอกอีเมลและรหัสนี้กับผู้ดูแลใหม่เอง แล้วให้เขาเปลี่ยนรหัสที่ ตั้งค่า > บัญชี ถ้าอีเมลนี้มีบัญชีอยู่แล้ว ไม่ต้องใส่รหัส</p></form>';
     }
-    return h + '</div>';
+    return h;
   }
 
   /* ---------- theme: per device, auto follows the system ---------- */
@@ -353,7 +353,7 @@
     var names = t.map(function (id, i) {
       var pl = map[id], pos = { ci: ci, s: s, i: i };
       var r = Math.round(RT.R[id] || 1500);
-      return '<button class="pl' + (sameSel(pos) ? ' sel' : '') + (!pl || !pl.active ? ' gone' : '') + '" data-act="pick" data-ci="' + ci + '" data-s="' + s + '" data-i="' + i + '" aria-label="เลือก ' + (pl ? esc(pl.name) : '') + ' เพื่อสลับ">' + (pl ? bird(RT.B[id], 'sm') + esc(pl.name) : '-') + '<small>' + r + '</small></button>';
+      return '<button class="pl' + (sameSel(pos) ? ' sel' : '') + (!pl || !pl.active ? ' gone' : '') + '" data-act="pick" data-ci="' + ci + '" data-s="' + s + '" data-i="' + i + '" aria-label="เลือก ' + (pl ? esc(pl.name) : '') + ' เพื่อสลับ">' + (pl ? bird(RT.B[id], 'sm') + esc(pl.name) : '-') + '<small>' + r + '</small>' + (pl && pl.rest ? '<span class="restmark">พักตาหน้า</span>' : '') + '</button>';
     }).join('<span class="plus">+</span>');
     var avg = Math.round(((RT.R[t[0]] || 1500) + (RT.R[t[1]] || 1500)) / 2);
     var pct = Math.round((s ? 1 - p : p) * 100);
@@ -401,15 +401,33 @@
     var counts = here.map(function (p) { return st.played[p.id] || 0; });
     var lo = counts.length ? Math.min.apply(null, counts) : 0, hi = counts.length ? Math.max.apply(null, counts) : 0;
     var fair = hi - lo <= 1;
+    var resting = here.filter(function (p) { return p.rest; });
+    var sitting = q.length + resting.filter(function (p) { return A.liveIds(S).indexOf(p.id) < 0; }).length;
     var clock = function (ms) { var d = new Date(ms); return d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); };
     var h = '<section class="board" aria-label="สรุปคืนนี้"><svg class="wm" aria-hidden="true"><use href="#i-shuttle"/></svg><div class="facts4">' +
       '<div class="fact"><span>แมตช์ที่จบ</span><b id="doneCount">' + S.done.length + '</b><small>กำลังเล่น ' + on + '/' + S.courts.length + ' สนาม</small></div>' +
       '<div class="fact"><span>เวลาเล่น</span><b>' + (t0 ? hm : '–') + '</b><small>' + (t0 ? 'เริ่ม ' + clock(t0) + ' น.' : 'ยังไม่เริ่ม') + '</small></div>' +
       '<div class="fact"><span>เกมต่อคน</span><b>' + (lo === hi ? lo : lo + '–' + hi) + '</b><small class="' + (fair ? 'ok' : 'warn') + '">' + (fair ? 'เท่ากันดี' : 'ต่างกัน ' + (hi - lo) + ' เกม') + '</small></div>' +
-      '<div class="fact"><span>มาวันนี้</span><b>' + here.length + '</b><small>สนามละ 4 · พัก ' + q.length + ' คน</small></div></div>';
-    h += '<div class="rest"><div class="rest-h"><b>พักตานี้</b><span>' + (q.length ? q.length + ' คน · แตะชื่อเพื่อสลับลงสนาม' : '') + '</span></div>';
-    if (!q.length) h += '<p class="rest-none">ไม่มีคนพัก ทุกคนอยู่ในสนาม</p>';
-    else {
+      '<div class="fact"><span>มาวันนี้</span><b>' + here.length + '</b><small>สนามละ 4 · พัก ' + sitting + ' คน</small></div></div>';
+    h += '<div class="rest"><div class="rest-h"><b>พักตานี้</b><span>' + (sitting ? sitting + ' คน' + (q.length && !ui.restPick ? ' · แตะชื่อเพื่อสลับลงสนาม' : '') : '') + '</span>' +
+      '<button class="restbtn' + (ui.restPick ? ' on' : '') + '" data-act="restpick" aria-pressed="' + !!ui.restPick + '">' + (ui.restPick ? ic('check') + 'เสร็จ' : ic('pause') + 'ขอพัก') + '</button></div>';
+    if (ui.restPick) {
+      // pick who sits out the next draw: anyone here tonight, on court or waiting
+      h += '<p class="rest-help">แตะชื่อคนที่ขอพัก ระบบจะข้ามเขา 1 ตาแล้วให้กลับมาต้นคิว</p><div class="chips">';
+      here.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'th'); }).forEach(function (p) {
+        h += '<button class="chip pick' + (p.rest ? ' resting' : '') + '" data-act="rest" data-id="' + p.id + '" aria-pressed="' + !!p.rest + '">' + bird(RT.B[p.id], 'sm') + '<span class="cn">' + esc(p.name) + '</span>' + (p.rest ? '<span class="tag-rest">พัก</span>' : '') + '</button>';
+      });
+      return h + '</div></div></section>';
+    }
+    if (!q.length && !resting.length) h += '<p class="rest-none">ไม่มีคนพัก ทุกคนอยู่ในสนาม</p>';
+    if (resting.length) {
+      h += '<div class="chips restline"><span class="rl">ขอพัก 1 ตา</span>';
+      resting.forEach(function (p) {
+        h += '<button class="chip resting" data-act="rest" data-id="' + p.id + '" aria-label="ยกเลิกพักของ ' + esc(p.name) + '">' + bird(RT.B[p.id], 'sm') + '<span class="cn">' + esc(p.name) + '</span><span class="cm">' + (A.liveIds(S).indexOf(p.id) >= 0 ? 'หลังจบเกม' : 'ข้ามตาหน้า') + '</span>' + ic('x') + '</button>';
+      });
+      h += '</div>';
+    }
+    if (q.length) {
       h += '<div class="chips">';
       q.forEach(function (x, i) {
         var pl = map[x.id], w = mins(pl.freeSince);
@@ -587,40 +605,51 @@
     }
     return h;
   }
+  /* Settings: grouped cards in two fixed columns (one on phone). Each column is its own stack, so opening a
+     section only grows that card and never moves cards between columns. */
+  function group(icon, title, body) { return '<section class="sgroup"><h3 class="ghead">' + ic(icon) + title + '</h3><div class="card scard">' + body + '</div></section>'; }
+  function seg(label, opts, cur, act, key) {
+    return '<div class="seg" role="group" aria-label="' + label + '">' + opts.map(function (o) {
+      return '<button class="' + (cur === o[0] ? 'on' : '') + '" data-act="' + act + '" data-' + key + '="' + o[0] + '" aria-pressed="' + (cur === o[0]) + '">' + o[1] + '</button>';
+    }).join('') + '</div>';
+  }
   function viewSettings() {
-    var h = '<div class="card"><h2 class="big">คืนนี้</h2><div class="line"><div><b>จำนวนสนาม</b><br><span class="muted small">สนามละ 4 คน · มาวันนี้ ' + activeCount() + ' คน</span></div>' +
+    var tonight = '<div class="srow"><div class="stext"><b>จำนวนสนาม</b><span>สนามละ 4 คน · มาวันนี้ ' + activeCount() + ' คน</span></div>' +
       '<div class="stepper"><button class="sq" data-act="courts-" aria-label="ลดสนาม"' + (S.courts.length <= 1 ? ' disabled' : '') + '>' + ic('minus') + '</button><span class="val">' + S.courts.length + '</span><button class="sq" data-act="courts+" aria-label="เพิ่มสนาม"' + (S.courts.length >= 10 ? ' disabled' : '') + '>' + ic('plus') + '</button></div></div>';
-    h += '<b>โหมดแต่ละสนาม</b>';
     S.courts.forEach(function (c, ci) {
-      h += '<div class="line"><span>สนาม ' + (ci + 1) + '</span><div class="seg" role="group" aria-label="โหมดสนาม ' + (ci + 1) + '">' + MODE_ORDER.map(function (m) { return '<button class="' + (c.mode === m ? 'on' : '') + '" data-act="setmode" data-ci="' + ci + '" data-mode="' + m + '" aria-pressed="' + (c.mode === m) + '">' + MODE_LABEL[m] + '</button>'; }).join('') + '</div></div>';
+      tonight += '<div class="srow"><div class="stext"><b>สนาม ' + (ci + 1) + '</b></div>' +
+        '<div class="seg" role="group" aria-label="โหมดสนาม ' + (ci + 1) + '">' + MODE_ORDER.map(function (m) { return '<button class="' + (c.mode === m ? 'on' : '') + '" data-act="setmode" data-ci="' + ci + '" data-mode="' + m + '" aria-pressed="' + (c.mode === m) + '">' + MODE_LABEL[m] + '</button>'; }).join('') + '</div></div>';
     });
-    h += '<div class="legend"><span><b class="m-normal">ปกติ</b> จัดตามคิว ทีมสูสีพอประมาณ</span><span><b class="m-competitive">แข่งขัน</b> 4 คนระดับใกล้กัน จับเก่งสุดกับอ่อนสุดเป็นทีม</span><span><b class="m-social">สังสรรค์</b> ผสมคนเก่งกับมือใหม่ นับ MMR ครึ่งเดียว</span></div></div>';
-    h += '<div class="card"><details><summary>ขั้นสูง: ความยืดหยุ่นของคิว (ตอนนี้ ' + (S.flex || 0) + ')' + ic('chev') + '</summary><div class="line" style="margin-top:8px"><span class="muted small">สนามแข่งขันและสังสรรค์เลือกจากคิวเพิ่มได้อีกกี่คน</span>' +
-      '<div class="seg" role="group" aria-label="ความยืดหยุ่นของคิว">' + [0, 2, 4, 6].map(function (n) { return '<button class="' + ((S.flex || 0) === n ? 'on' : '') + '" data-act="flex" data-n="' + n + '" aria-pressed="' + ((S.flex || 0) === n) + '">' + n + '</button>'; }).join('') + '</div></div>' +
-      '<p class="muted small">0 = ตามคิวเป๊ะ · ยิ่งมาก ระดับยิ่งใกล้ แต่บางคนอาจรอนานขึ้นนิดหน่อย คนที่เล่นน้อยกว่ายังได้ก่อนเสมอ</p></details></div>';
-    var tp = themePref();
-    h += '<div class="card"><div class="line"><div><h2>สีของแอป</h2><span class="muted small">อัตโนมัติ = ตามที่ตั้งในเครื่อง</span></div><div class="seg" role="group" aria-label="สีของแอป">' +
-      [['auto', 'อัตโนมัติ'], ['light', 'สว่าง'], ['dark', 'มืด']].map(function (o) { return '<button class="' + (tp === o[0] ? 'on' : '') + '" data-act="theme" data-v="' + o[0] + '" aria-pressed="' + (tp === o[0]) + '">' + o[1] + '</button>'; }).join('') + '</div></div></div>';
-    h += '<div class="card"><div class="line"><div><h2>โหมดจอใหญ่</h2><span class="muted small">ตัวใหญ่ ซ่อนปุ่ม ไว้วางโชว์ข้างสนาม</span></div><label class="sw"><input type="checkbox" data-act="boardsw"' + (S.board ? ' checked' : '') + ' aria-label="โหมดจอใหญ่"><span class="track"></span></label></div></div>';
-    h += '<div class="card"><h2 class="big">จบคืน</h2>' +
-      '<button class="btn' + (ui.confirm === 'end' ? ' danger' : ' primary') + '" data-act="end">' + ic('flag') + (ui.confirm === 'end' ? 'กดอีกครั้งเพื่อจบเกมวันนี้' : 'จบเกมวันนี้และเก็บสถิติ') + '</button>' +
-      '<p class="muted small">บันทึกแมตช์และอันดับขึ้นระบบ และยก MMR ไปใช้ครั้งหน้า คืนถัดไปจะเปิดเองตอนเช็กอิน ต้องออนไลน์ สนามที่ยังไม่บันทึกผลจะไม่ถูกนับ</p>' +
-      '<button class="btn' + (ui.confirm === 'reset' ? ' danger' : '') + '" data-act="reset">' + ic('trash') + (ui.confirm === 'reset' ? 'กดอีกครั้งเพื่อล้างและรีเซ็ต MMR' : 'เริ่มเกมใหม่ (รีเซ็ต MMR)') + '</button>' +
-      '<p class="muted small">ล้างแมตช์ของเกมนี้โดยไม่เก็บ และตั้ง MMR ทุกคนกลับตามระดับ เกมที่จบแล้วยังอยู่ กดย้อนกลับได้</p></div>';
-    h += '<div class="card"><details><summary>นำเข้าจากแอปเดิม' + ic('chev') + '</summary><p class="muted small">วางข้อมูลจากปุ่ม "คัดลอกข้อมูลสำรอง" ของแอปเดิม ระบบจะจับคู่ชื่อ เพิ่มคนที่ยังไม่มี และนำแมตช์เข้าเกมนี้ ทำได้เมื่อเกมนี้ยังไม่มีแมตช์</p>' +
-      '<form id="importForm" class="add" autocomplete="off"><textarea id="impText" rows="3" placeholder="วางข้อมูลสำรองที่นี่" aria-label="ข้อมูลสำรองจากแอปเดิม"></textarea><button class="btn" type="submit"' + (S.done.length ? ' disabled' : '') + '>นำเข้า</button></form></details></div>';
+    tonight += '<div class="legend"><span><b class="m-normal">ปกติ</b> จัดตามคิว ทีมสูสีพอประมาณ</span><span><b class="m-competitive">แข่งขัน</b> 4 คนระดับใกล้กัน จับเก่งสุดกับอ่อนสุดเป็นทีม</span><span><b class="m-social">สังสรรค์</b> ผสมคนเก่งกับมือใหม่ นับ MMR ครึ่งเดียว</span></div>';
+
+    var end = '<div class="sblock"><button class="btn big' + (ui.confirm === 'end' ? ' danger' : ' primary') + '" data-act="end">' + ic('flag') + (ui.confirm === 'end' ? 'กดอีกครั้งเพื่อจบเกมวันนี้' : 'จบเกมวันนี้และเก็บสถิติ') + '</button>' +
+      '<p class="muted small">บันทึกแมตช์และอันดับขึ้นระบบ ยก MMR ไปใช้ครั้งหน้า สนามที่ยังไม่บันทึกผลจะไม่ถูกนับ ต้องออนไลน์</p></div>' +
+      '<div class="srow"><div class="stext"><b>เริ่มเกมใหม่</b><span>ล้างแมตช์คืนนี้ และตั้ง MMR ทุกคนกลับตามระดับ กดย้อนกลับได้</span></div>' +
+      '<button class="btn sm' + (ui.confirm === 'reset' ? ' danger' : '') + '" data-act="reset">' + ic('trash') + (ui.confirm === 'reset' ? 'กดอีกครั้ง' : 'รีเซ็ต') + '</button></div>';
+
+    var look = '<div class="srow"><div class="stext"><b>สีของแอป</b><span>อัตโนมัติ = ตามที่ตั้งในเครื่อง</span></div>' + seg('สีของแอป', [['auto', 'อัตโนมัติ'], ['light', 'สว่าง'], ['dark', 'มืด']], themePref(), 'theme', 'v') + '</div>' +
+      '<div class="srow"><div class="stext"><b>โหมดจอใหญ่</b><span>ตัวใหญ่ ซ่อนปุ่ม ไว้วางโชว์ข้างสนาม</span></div><label class="sw"><input type="checkbox" data-act="boardsw"' + (S.board ? ' checked' : '') + ' aria-label="โหมดจอใหญ่"><span class="track"></span></label></div>';
+
+    var account = '<div class="srow"><div class="stext"><b>' + esc(ui.user && ui.user.email || '') + '</b><span>เข้าสู่ระบบอยู่</span></div><button class="btn sm" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
+      '<form id="pwForm" class="sblock add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn sm" type="submit">เปลี่ยนรหัสผ่าน</button></form>';
+
     var sc = sheetCfg(), pending = sheetQueue().length;
-    h += '<div class="card"><details' + (sc.url || pending ? ' open' : '') + '><summary>รายงาน Google Sheet (ไม่บังคับ)' + ic('chev') + '</summary><p class="muted small">ตอนกดจบเกม ระบบส่งสรุปคืนนั้น (ผลรายคน แมตช์ทั้งหมด และอันดับล่าสุด) ไปที่ Google Sheet ใช้เป็นรายงานและสำเนาข้อมูล ตั้งค่าครั้งเดียวต่อเครื่อง วิธีตั้งค่าอยู่ใน README</p>' +
+    var data = '<div class="srow"><div class="stext"><b>ดาวน์โหลดข้อมูลทั้งหมด</b><span>ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์</span></div><button class="btn sm" data-act="export">' + ic('download') + 'ดาวน์โหลด</button></div>' +
+      '<details class="sdetails"><summary><span class="stext"><b>ความยืดหยุ่นของคิว</b><span>ตอนนี้ ' + (S.flex || 0) + ' · สนามแข่งขันและสังสรรค์</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+      '<div class="line"><span class="muted small">เลือกจากคิวเพิ่มได้อีกกี่คน</span>' + seg('ความยืดหยุ่นของคิว', [[0, '0'], [2, '2'], [4, '4'], [6, '6']], S.flex || 0, 'flex', 'n') + '</div>' +
+      '<p class="muted small">0 = ตามคิวเป๊ะ · ยิ่งมาก ระดับยิ่งใกล้ แต่บางคนอาจรอนานขึ้นนิดหน่อย คนที่เล่นน้อยกว่ายังได้ก่อนเสมอ</p></div></details>' +
+      '<details class="sdetails"><summary><span class="stext"><b>นำเข้าจากแอปเดิม</b><span>ใช้ข้อมูลจากปุ่ม "คัดลอกข้อมูลสำรอง"</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+      '<p class="muted small">ระบบจับคู่ชื่อ เพิ่มคนที่ยังไม่มี และนำแมตช์เข้าเกมนี้ ทำได้เมื่อเกมนี้ยังไม่มีแมตช์</p>' +
+      '<form id="importForm" class="add" autocomplete="off"><textarea id="impText" rows="3" placeholder="วางข้อมูลสำรองที่นี่" aria-label="ข้อมูลสำรองจากแอปเดิม"></textarea><button class="btn sm" type="submit"' + (S.done.length ? ' disabled' : '') + '>นำเข้า</button></form></div></details>' +
+      '<details class="sdetails"' + (sc.url || pending ? ' open' : '') + '><summary><span class="stext"><b>รายงาน Google Sheet</b><span>ไม่บังคับ · ส่งสรุปตอนจบเกม</span></span>' + ic('chev') + '</summary><div class="sbody">' +
       '<form id="sheetForm" class="add" autocomplete="off">' +
       '<label class="small">ลิงก์ Web app<input class="field" id="sheetUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(sc.url) + '"></label>' +
       '<label class="small">รหัส (token) ต้องตรงกับในสคริปต์<input class="field" id="sheetToken" value="' + esc(sc.token) + '"></label>' +
-      '<div class="line"><button class="btn sm" type="button" data-act="gentoken">สร้างรหัสใหม่</button><button class="btn sm" type="button" data-act="copytoken">คัดลอกรหัส</button></div><button class="btn sm primary" type="submit">บันทึกและส่งทดสอบ</button></form>' +
-      (pending ? '<button class="btn" data-act="flushsheet">' + ic('cloud') + 'ส่งรายงานที่ค้าง (' + pending + ')</button>' : '') + '</details></div>';
-    h += '<div class="card"><div class="line"><div><h2>ดาวน์โหลดข้อมูลทั้งหมด</h2><span class="muted small">ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์ เก็บไว้เป็นสำเนา</span></div><button class="btn" data-act="export">' + ic('save') + 'ดาวน์โหลด</button></div></div>';
-    h += adminsCard();
-    h += '<div class="card"><div class="line"><div><h2>บัญชี</h2><span class="muted small">' + esc(ui.user && ui.user.email || '') + '</span></div><button class="btn" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
-      '<form id="pwForm" class="add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn" type="submit">เปลี่ยนรหัสผ่าน</button></form></div>';
-    return h;
+      '<div class="line"><button class="btn xs" type="button" data-act="gentoken">สร้างรหัสใหม่</button><button class="btn xs" type="button" data-act="copytoken">คัดลอกรหัส</button></div><button class="btn sm primary" type="submit">บันทึกและส่งทดสอบ</button></form>' +
+      (pending ? '<button class="btn sm" data-act="flushsheet">' + ic('cloud') + 'ส่งรายงานที่ค้าง (' + pending + ')</button>' : '') + '</div></details>';
+
+    return '<div class="scol">' + group('court', 'คืนนี้', tonight) + group('flag', 'จบคืน', end) + group('palette', 'หน้าตา', look) + '</div>' +
+      '<div class="scol">' + group('shield', 'ผู้ดูแลก๊วน', adminsBody()) + group('gear', 'บัญชี', account) + group('sliders', 'ข้อมูลและขั้นสูง', data) + '</div>';
   }
   function dockHtml() {
     if (activeCount() < 4) return '<div class="dock-in"><button class="btn primary" data-act="tab" data-tab="people">' + ic('users') + 'ไปเช็กอินผู้เล่น</button></div>';
@@ -868,7 +897,7 @@
     if (!S) return;
     var ci = +t.dataset.ci, before = JSON.stringify(S), msg = null, snap = before, birdToast = null;
     if (a !== 'undo' && a !== 'tab') ui.toast = null;
-    if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; ui.editMembers = false; ui.editPlayer = null; ui.resetId = null; try { window.scrollTo(0, 0); } catch (x) { } }
+    if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; ui.editMembers = false; ui.editPlayer = null; ui.resetId = null; ui.restPick = false; try { window.scrollTo(0, 0); } catch (x) { } }
     else if (a === 'sync') { if (sync.dirty) runSync(); }
     else if (a === 'board') { S.board = !S.board; ui.sel = null; }
     else if (a === 'undo') {
@@ -935,6 +964,8 @@
     else if (a === 'edit-mmr') ui.editId = +t.dataset.id;
     else if (a === 'edit-player') ui.editPlayer = +t.dataset.id;
     else if (a === 'setlevel') { setLevel(+t.dataset.id, t.dataset.lv); }
+    else if (a === 'restpick') { ui.restPick = !ui.restPick; ui.sel = null; }
+    else if (a === 'rest') { var rp = A.findP(S, +t.dataset.id); if (rp && A.toggleRest(S, rp.id)) msg = rp.rest ? rp.name + ' ขอพัก 1 ตา' : rp.name + ' กลับเข้าคิวแล้ว'; }
     else if (a === 'new-done') { ui.newIds = []; }
     else if (a === 'edit-player-cancel') ui.editPlayer = null;
     else if (a === 'theme') { setTheme(t.dataset.v); }

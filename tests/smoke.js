@@ -71,7 +71,15 @@ function check(name, cond, detail) { results.push({ name, ok: !!cond, detail });
   check('ranking rows carry a bird badge', (await page.$$('.rk .bird')).length > 5);
   await page.click('[data-tab=play]');
   check('banner lists who sits out before the draw', (await page.$$('.chip')).length === 14);
+  const restName = await page.$eval('.chip .cn', el => el.textContent);
+  await page.click('[data-act=restpick]');
+  await page.click(`.chip.pick:has(.cn:text-is("${restName}"))`);
+  await page.click('[data-act=restpick]');
+  check('resting player is listed under ขอพัก', (await page.textContent('.restline')).includes(restName));
   await page.click('.fill-inline');
+  const onCourtNames = await page.$$eval('.pl', els => els.map(e => [...e.childNodes].find(n => n.nodeType === 3).textContent));
+  check('resting player is skipped by the draw', !onCourtNames.includes(restName) && onCourtNames.length === 12, onCourtNames.join(','));
+  check('after sitting out once they are back in the queue', (await page.$('.restline')) === null && (await page.$$eval('.chip .cn', els => els.map(e => e.textContent))).includes(restName));
   const courts = await page.$$eval('.match', els => els.length);
   check('fill draws all 3 courts', courts === 3, courts);
 
