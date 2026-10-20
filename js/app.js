@@ -530,8 +530,13 @@
       }
     }
     ui.busy = null;
+    // the LINE post says how many courts were booked ("3 สนาม"); only change it before play starts
+    var courts = A.parseCourts(text), courtMsg = '';
+    if (courts && courts !== S.courts.length && !S.done.length && !S.live.some(Boolean)) {
+      A.setCourtCount(S, courts); courtMsg = ' · ตั้ง ' + courts + ' สนามตามโพสต์';
+    }
     changed();
-    toast('เช็กอิน ' + checked + ' คน · เพิ่มใหม่ ' + added + ' คน' + (failed.length ? ' · เพิ่มไม่ได้: ' + failed.join(', ') + ' (ต้องออนไลน์)' : ''), null);
+    toast('เช็กอิน ' + checked + ' คน · เพิ่มใหม่ ' + added + ' คน' + courtMsg + (failed.length ? ' · เพิ่มไม่ได้: ' + failed.join(', ') + ' (ต้องออนไลน์)' : ''), null);
     render();
   }
   async function removePlayer(id) {

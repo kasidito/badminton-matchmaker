@@ -6,7 +6,7 @@ Built for one admin on an iPad or phone at the court. Players do not log in.
 
 ## What it does
 
-- **Check-in**: paste the LINE sign-up post ("1. ชิน 2. โฟล์ค …"). Existing members are checked in and new names are added.
+- **Check-in**: paste the LINE sign-up post as it is ("พุธ … 3 สนาม / 1. ชิน 2. โฟล์ค …"). Existing members are checked in, new names are added, and the court count is taken from "N สนาม" if play hasn't started.
 - **Fair rotation**: whoever has played the fewest matches goes on next; ties go to whoever has waited longest. Late arrivals start level with the person who has played least.
 - **Court by court**: each court is drawn, played and saved on its own. Saving a result leaves the court empty until the admin draws it again. Nothing is drawn automatically.
 - **Manual swap**: tap a player, then tap another player on any court or in the queue to swap them.

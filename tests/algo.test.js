@@ -135,3 +135,9 @@ test('parses a LINE sign-up post and plain lists', () => {
   assert.deepStrictEqual(A.parseNames(post), ['ชิน', 'โฟล์ค', 'Ard']);
   assert.deepStrictEqual(A.parseNames('ชิน, ตาล,โม'), ['ชิน', 'ตาล', 'โม']);
 });
+
+test('reads the number of courts from a LINE post', () => {
+  assert.strictEqual(A.parseCourts('พุธ 21 ตค 20:00 - 22:00  3 สนาม\n1. ชิน'), 3);
+  assert.strictEqual(A.parseCourts('ศุกร์ 2สนาม'), 2);
+  assert.strictEqual(A.parseCourts('1. ชิน\n2. ตาล'), null);
+});

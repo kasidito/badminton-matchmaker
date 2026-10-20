@@ -177,7 +177,13 @@ const viewText = page => page.textContent('#view');
   await signIn(p4);
   // a night opened on an earlier day but never used moves to today
   check('unused night from an earlier day is not left with an old date', (await p4.textContent('#date')).includes('ยังไม่เปิดคืน') || (await p4.textContent('#date')).startsWith('คืน'));
+  await p4.click('#setBtn');
+  await p4.click('[data-act="courts-"]');          // 2 courts before the post arrives
   await p4.click('[data-tab=people]');
+  await p4.fill('#nameIn', 'พุธ 21 ตค 20:00 - 22:00  3 สนาม\n1. ชิน\n2. โฟล์ค\n3. เดือน\n14.\n------\nถอนชื่อหลังอังคารเที่ยงแล้วไม่มีคนแทนหารค่าสนามนะคะ');
+  await p4.click('#addForm button[type=submit]');
+  await p4.waitForSelector('#toast:not([hidden])');
+  check('pasting the post sets the court count from "3 สนาม"', (await p4.textContent('#toast')).includes('ตั้ง 3 สนาม'));
   await p4.click('[data-act=checkall]');
   await p4.click('[data-tab=play]');
   const hint = await p4.textContent('.slot .next');

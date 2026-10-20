@@ -258,13 +258,21 @@
       .filter(function (s) { return s && /[A-Za-z฀-๿À-ɏ぀-ヿ一-鿿]/.test(s); });
   }
 
+  /* "พุธ 21 ตค 20:00 - 22:00  3 สนาม" -> 3. Returns null when the post does not say. */
+  function parseCourts(text) {
+    var m = String(text).match(/(\d{1,2})\s*สนาม/);
+    if (!m) return null;
+    var n = parseInt(m[1], 10);
+    return n >= 1 && n <= 10 ? n : null;
+  }
+
   var Algo = {
     LV: LV, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP,
     stats: stats, ratings: ratings, winProb: winProb, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,
     setCourtCount: setCourtCount, minCredit: minCredit, daySnapshot: daySnapshot, carryForward: carryForward,
-    endGame: endGame, resetGame: resetGame, parseNames: parseNames
+    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Algo;
   else root.Algo = Algo;
