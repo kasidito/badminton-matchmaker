@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1fa36f"/>
+      <stop offset="1" stop-color="#0a3b2b"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.68" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="skirt" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.6" stop-color="#f4f7f8"/>
+      <stop offset="1" stop-color="#cfd9dc"/>
+    </linearGradient>
+    <radialGradient id="cork" cx="0.35" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#fff2b0"/>
+      <stop offset="0.45" stop-color="#ffd23f"/>
+      <stop offset="1" stop-color="#e88a12"/>
+    </radialGradient>
+    <filter id="sh" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#021a12" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <!-- court lines -->
+  <g stroke="#ffffff" stroke-opacity="0.13" stroke-width="10" fill="none">
+    <path d="M-40 800 L1064 560"/>
+    <path d="M-40 880 L1064 640"/>
+    <path d="M300 1100 L620 -80"/>
+  </g>
+  <!-- speed streaks -->
+  <g stroke="#ffffff" stroke-linecap="round" fill="none">
+    <path d="M150 760 L330 580" stroke-width="22" stroke-opacity="0.45"/>
+    <path d="M110 640 L240 510" stroke-width="16" stroke-opacity="0.3"/>
+    <path d="M270 880 L400 750" stroke-width="16" stroke-opacity="0.3"/>
+  </g>
+  <g transform="translate(585 455) rotate(-135) scale(1.08)" filter="url(#sh)">
+    <path d="M-95 140 L-260 -250 Q-238 -292 -195 -262 Q-174 -300 -130 -262 Q-108 -300 -65 -262 Q-43 -300 0 -262 Q43 -300 65 -262 Q108 -300 130 -262 Q174 -300 195 -262 Q238 -292 260 -250 L95 140 Z" fill="url(#skirt)"/>
+    <g stroke="#9fb0b5" stroke-width="5" stroke-linecap="round" opacity="0.8">
+      <path d="M-78 140 L-195 -258"/><path d="M-47 140 L-130 -258"/><path d="M-16 140 L-43 -258"/>
+      <path d="M16 140 L43 -258"/><path d="M47 140 L130 -258"/><path d="M78 140 L195 -258"/>
+    </g>
+    <path d="M-170 -40 Q0 -10 170 -40" stroke="#ffd23f" stroke-width="16" fill="none" stroke-linecap="round"/>
+    <path d="M-150 30 Q0 55 150 30" stroke="#0b3f2d" stroke-width="8" fill="none" stroke-linecap="round" opacity="0.6"/>
+    <rect x="-104" y="132" width="208" height="30" rx="10" fill="#e8453c"/>
+    <path d="M-104 160 L104 160 L104 180 A104 104 0 0 1 -104 180 Z" fill="url(#cork)"/>
+  </g>
+</svg>
