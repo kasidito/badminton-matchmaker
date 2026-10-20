@@ -1,0 +1,72 @@
+# UAT checklist
+
+Run on the iPad you'll use at the court, in landscape and portrait. Mark each line Pass / Fail and note anything odd.
+
+Tester: ______  Date: ______  Device: ______
+
+## 1. Sign in
+- [ ] Opening the link shows the sign-in screen
+- [ ] A wrong password shows an error
+- [ ] The admin account signs in and lands on สนาม (Courts)
+- [ ] Closing and reopening the app keeps you signed in
+- [ ] A non-admin account sees "บัญชีนี้ยังไม่ใช่ผู้ดูแล" and no data
+
+## 2. Check-in
+- [ ] Pasting the full LINE post checks in everyone listed, ignores the date line, empty numbers and the footer
+- [ ] A new name in the post is added as a member
+- [ ] Toggling a member's switch checks them in or out
+- [ ] Changing a level changes their starting MMR (Ranking tab)
+- [ ] A late arrival checked in mid-session goes to the front of the queue but doesn't jump ahead of people with fewer matches
+
+## 3. Courts
+- [ ] สุ่มลงสนามว่าง fills every empty court; nobody is on two courts
+- [ ] Each court shows Team A and Team B clearly, with average MMR and win chance
+- [ ] ทีมนี้ชนะ highlights the winner; tapping it again clears it
+- [ ] บันทึกผล is disabled until a winner is picked
+- [ ] After บันทึกผล the court is **empty** and stays empty until you draw it
+- [ ] สุ่มสนามนี้ใหม่ changes the players and doesn't count a match
+- [ ] Undo (ย้อนกลับ) reverses the last save, draw, redraw or swap
+- [ ] Court mode chip cycles ปกติ → แข่งขัน → สังสรรค์
+
+## 4. Manual swap
+- [ ] Tap a player, then a player on another court: they swap
+- [ ] Tap a player, then a name in the queue: the queued player goes on, the other goes to the queue
+- [ ] Swapping inside one court changes partners
+- [ ] Swapping on a court with a winner picked clears the winner
+
+## 5. Ranking and history
+- [ ] Ranking changes after each saved match; the weaker partner gains more for a win
+- [ ] Editing a player's MMR (pencil) sticks after more matches
+- [ ] Summary → สลับผู้ชนะ flips a past result and the ranking updates
+- [ ] Summary → ลบแมตช์นี้ removes it and match counts update
+
+## 6. Saving and connection
+- [ ] The header shows บันทึกแล้ว a moment after each change
+- [ ] Turn on Airplane mode, save a result: the app keeps working and the header shows a warning
+- [ ] Turn Airplane mode off: tap the warning (or wait), it changes to บันทึกแล้ว
+- [ ] Refresh the page mid-session: courts, queue and results come back
+- [ ] Open the app on a second device: it shows the same night (last saved state)
+- [ ] In Supabase (Table editor → matches) the night's matches are there
+
+## 7. End of night
+- [ ] Gear → จบเกมวันนี้และเก็บสถิติ needs two taps
+- [ ] After it: Summary → เกมที่จบแล้ว shows tonight with the ranking
+- [ ] A new night starts with nobody checked in and MMR carried over
+- [ ] เริ่มเกมใหม่ (รีเซ็ต MMR) clears tonight and resets ratings to levels; undo brings it back
+
+## 8. Layout
+- [ ] iPad landscape: header on one row, courts two per row, queue on the right, no bottom bar
+- [ ] iPad portrait: courts two per row, queue below, fill button at the bottom
+- [ ] Phone: everything readable, nothing cut off or scrolling sideways
+- [ ] Board mode (screen icon) shows big names and hides buttons
+- [ ] Dark mode is readable
+
+## 9. Import from the old app
+- [ ] Old app: Settings → คัดลอกข้อมูลสำรอง; new app: Settings → นำเข้าจากแอปเดิม → นำเข้า
+- [ ] Players are matched by name, new ones are added, matches and past days appear
+
+Issues found:
+
+| # | Step | What happened | Expected |
+|---|---|---|---|
+| | | | |

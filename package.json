@@ -1,0 +1,13 @@
+{
+  "name": "badminton-matchmaker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Club night matchmaking, MMR and history for a badminton group. Static site + Supabase.",
+  "scripts": {
+    "test": "node --test tests/algo.test.js",
+    "smoke": "node tests/smoke.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.47.0"
+  }
+}

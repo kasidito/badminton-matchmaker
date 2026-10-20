@@ -1,0 +1,122 @@
+/* In-memory stand-in for supabase-js, used only by tests/smoke.js. Mirrors the SQL functions in
+   supabase/migrations closely enough to exercise the app: tables, inserts, filters, the
+   sync_session and close_session RPCs, and email/password sign-in. Data persists in localStorage
+   so a page reload can be tested. Set window.__fakeOffline = true to make every call fail. */
+(function () {
+  var KEY = 'fake-supabase-db';
+  var names = ['ชิน', 'โฟล์ค', 'เดือน', 'นัทซ้าย', 'เปตอง', 'ป๊อป', 'Ard', 'ภู', 'กร', 'ตรัย', 'บีม', 'Yiip', 'ตั้ง'];
+  function fresh() {
+    return {
+      seq: { players: names.length, sessions: 0, matches: 0 }, auth: null,
+      admins: [{ user_id: 'u1' }],
+      players: names.map(function (n, i) { return { id: i + 1, name: n, level: 'I', start_mmr: 1500, career_games: 0, active: true }; }),
+      sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: []
+    };
+  }
+  var db = JSON.parse(localStorage.getItem(KEY) || 'null') || fresh();
+  function persist() { localStorage.setItem(KEY, JSON.stringify(db)); }
+  window.__fakeDb = function () { return db; };
+  window.__rpcLog = [];
+  function fail(msg, code) { var e = new Error(msg); e.code = code; throw e; }
+  function offline() { if (window.__fakeOffline) fail('Failed to fetch'); }
+  function today() { return new Date().toISOString().slice(0, 10); }
+
+  function query(table) {
+    var st = { filters: [], order: [], lim: null, op: 'select', payload: null, single: false, sel: '*' };
+    var api = {
+      select: function (c) { st.sel = c || '*'; return api; },
+      eq: function (c, v) { st.filters.push(function (r) { return r[c] === v; }); return api; },
+      in: function (c, vs) { st.filters.push(function (r) { return vs.indexOf(r[c]) >= 0; }); return api; },
+      order: function (c, o) { st.order.push([c, o && o.ascending === false ? -1 : 1]); return api; },
+      limit: function (n) { st.lim = n; return api; },
+      insert: function (p) { st.op = 'insert'; st.payload = p; return api; },
+      update: function (p) { st.op = 'update'; st.payload = p; return api; },
+      single: function () { st.single = true; return api; },
+      then: function (ok) {
+        try { offline(); var data = exec(); persist(); ok({ data: data, error: null }); }
+        catch (e) { ok({ data: null, error: { message: e.message, code: e.code } }); }
+      }
+    };
+    function exec() {
+      var rows = db[table];
+      if (st.op === 'insert') {
+        var list = Array.isArray(st.payload) ? st.payload : [st.payload];
+        var out = list.map(function (p) {
+          var r = JSON.parse(JSON.stringify(p));
+          if (table === 'players') {
+            if (db.players.some(function (x) { return x.name.toLowerCase() === r.name.toLowerCase(); })) fail('duplicate key value violates unique constraint "players_name_key"', '23505');
+            r = Object.assign({ level: 'I', start_mmr: 1500, career_games: 0, active: true }, r);
+          }
+          if (table === 'sessions') {
+            if ((r.status || 'open') === 'open' && db.sessions.some(function (s) { return s.status === 'open'; })) fail('duplicate key value violates unique constraint "sessions_one_open"', '23505');
+            r = Object.assign({ status: 'open', court_modes: ['normal', 'normal', 'normal'], flex: 4, state: null, played_on: today(), started_at: new Date().toISOString(), ended_at: null }, r);
+            r.court_count = r.court_modes.length;
+          }
+          if (db.seq[table] != null) r.id = ++db.seq[table];
+          rows.push(r); return r;
+        });
+        return st.single ? out[0] : out;
+      }
+      var hit = rows.filter(function (r) { return st.filters.every(function (f) { return f(r); }); });
+      if (st.op === 'update') { hit.forEach(function (r) { Object.assign(r, st.payload); }); return null; }
+      hit = hit.slice();
+      st.order.slice().reverse().forEach(function (o) { hit.sort(function (a, b) { return (a[o[0]] > b[o[0]] ? 1 : a[o[0]] < b[o[0]] ? -1 : 0) * o[1]; }); });
+      if (st.lim != null) hit = hit.slice(0, st.lim);
+      hit = JSON.parse(JSON.stringify(hit));
+      if (table === 'matches' && st.sel.indexOf('match_players(') >= 0) {
+        hit.forEach(function (m) { m.match_players = db.match_players.filter(function (mp) { return mp.match_id === m.id; }); });
+      }
+      return st.single ? hit[0] : hit;
+    }
+    return api;
+  }
+
+  function rpc(name, a) {
+    return new Promise(function (ok) {
+      try {
+        offline();
+        window.__rpcLog.push({ name: name, args: JSON.parse(JSON.stringify(a)) });
+        var s = db.sessions.filter(function (x) { return x.id === a.p_session_id && x.status === 'open'; })[0];
+        if (!s) fail('session ' + a.p_session_id + ' is not open', 'P0002');
+        if (name === 'sync_session') {
+          s.state = a.p_state; s.court_modes = a.p_court_modes; s.court_count = a.p_court_modes.length; s.flex = a.p_flex;
+          a.p_players.forEach(function (r) { var p = db.players.filter(function (x) { return x.id === r.id; })[0]; if (p) { p.level = r.level; p.start_mmr = r.start_mmr; p.career_games = r.career_games; } });
+          db.session_players = db.session_players.filter(function (x) { return x.session_id !== s.id; })
+            .concat(a.p_players.filter(function (r) { return r.in_session; }).map(function (r) { return { session_id: s.id, player_id: r.id, base: r.base, active: r.active }; }));
+          var old = db.matches.filter(function (m) { return m.session_id === s.id; }).map(function (m) { return m.id; });
+          db.matches = db.matches.filter(function (m) { return m.session_id !== s.id; });
+          db.match_players = db.match_players.filter(function (mp) { return old.indexOf(mp.match_id) < 0; });
+          a.p_matches.forEach(function (m) {
+            var id = ++db.seq.matches;
+            db.matches.push({ id: id, session_id: s.id, seq: m.seq, court: m.court, mode: m.mode, team_a: m.a, team_b: m.b, winner: m.w, started_at: m.started_at, ended_at: m.ended_at });
+            m.players.forEach(function (x) { db.match_players.push({ match_id: id, player_id: x.id, team: x.team, won: x.won, rating_before: x.before, rating_after: x.after }); });
+          });
+          db.rating_adjustments = db.rating_adjustments.filter(function (x) { return x.session_id !== s.id; })
+            .concat(a.p_adjustments.map(function (x) { return { session_id: s.id, player_id: x.id, at_seq: x.at, to_mmr: x.to }; }));
+        } else if (name === 'close_session') {
+          a.p_players.forEach(function (r) { var p = db.players.filter(function (x) { return x.id === r.id; })[0]; if (p) { p.start_mmr = r.start_mmr; p.career_games = r.career_games; } });
+          s.status = 'closed'; s.ended_at = new Date().toISOString(); s.played_on = today(); s.state = null;
+        } else fail('unknown rpc ' + name);
+        persist(); ok({ data: null, error: null });
+      } catch (e) { ok({ data: null, error: { message: e.message, code: e.code } }); }
+    });
+  }
+
+  window.supabase = {
+    createClient: function () {
+      return {
+        from: query,
+        rpc: rpc,
+        auth: {
+          getSession: function () { return Promise.resolve({ data: { session: db.auth } }); },
+          signInWithPassword: function (c) {
+            if (c.password !== 'correct-horse') return Promise.resolve({ data: null, error: { message: 'Invalid login credentials' } });
+            db.auth = { user: { id: 'u1', email: c.email } }; persist();
+            return Promise.resolve({ data: { user: db.auth.user }, error: null });
+          },
+          signOut: function () { db.auth = null; persist(); return Promise.resolve({ error: null }); }
+        }
+      };
+    }
+  };
+})();
