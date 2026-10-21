@@ -1,5 +1,5 @@
 {
-  "name": "badminton-matchmaker",
+  "name": "budmintan",
   "version": "1.0.0",
   "private": true,
   "description": "Club night matchmaking, MMR and history for a badminton group. Static site + Supabase.",

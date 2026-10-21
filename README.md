@@ -65,7 +65,7 @@ Project `badminton-matchmaker` (Singapore, `vhvlhuimelqsnglhayxs`).
    select (select max(id) from public.clubs), id from auth.users where email = 'you@example.com';
    ```
    Deploy `supabase/functions/manage-admins` (verify JWT on).
-4. Authentication → URL Configuration: set **Site URL** to `https://kasidito.github.io/badminton-matchmaker/` and add the same address under **Redirect URLs**. The forgot-password email links back here.
+4. Authentication → URL Configuration: set **Site URL** to `https://kasidito.github.io/budmintan/` and add the same address under **Redirect URLs**. The forgot-password email links back here.
 
 Row level security limits every row to the admins of its club (`club_admins`); a signed-in user who runs no club sees nothing. The key in `js/config.js` is the publishable key, which is meant to be public. Never commit the `service_role` key.
 
@@ -80,7 +80,7 @@ Supabase's built-in mailer only reaches members of the Supabase organisation. To
 
 ### Hosting on GitHub Pages
 
-Repository → Settings → Pages → Deploy from a branch → `main` / root. The site appears at `https://<user>.github.io/badminton-matchmaker/`.
+Repository → Settings → Pages → Deploy from a branch → `main` / root. The site appears at `https://<user>.github.io/budmintan/ (repo renamed from badminton-matchmaker on 21 Oct 2026; GitHub does not redirect the old Pages address)`.
 
 ## Tests
 
