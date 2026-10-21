@@ -11,7 +11,7 @@
       users: [{ id: 'u1', email: 'admin@example.com' }],
       clubs: [{ id: 1, name: 'ก๊วนแบด' }],
       club_admins: [{ club_id: 1, user_id: 'u1' }],
-      players: names.map(function (n, i) { return { id: i + 1, club_id: 1, name: n, level: 'I', start_mmr: 1500, career_games: 0, active: true }; }),
+      players: names.map(function (n, i) { return { id: i + 1, club_id: 1, name: n, level: 'I', start_mmr: 1500, start_sigma: null, aliases: [], career_games: 0, active: true }; }),
       sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: []
     };
   }
@@ -56,7 +56,7 @@
           if (table === 'players') {
             if (mine.indexOf(r.club_id) < 0) fail('new row violates row-level security policy for table "players"', '42501');
             if (db.players.some(function (x) { return x.club_id === r.club_id && x.name.toLowerCase() === r.name.toLowerCase(); })) fail('duplicate key value violates unique constraint "players_club_name_key"', '23505');
-            r = Object.assign({ level: 'I', start_mmr: 1500, career_games: 0, active: true }, r);
+            r = Object.assign({ level: 'I', start_mmr: 1500, start_sigma: null, aliases: [], career_games: 0, active: true }, r);
           }
           if (table === 'sessions') {
             if (mine.indexOf(r.club_id) < 0) fail('new row violates row-level security policy for table "sessions"', '42501');
@@ -101,6 +101,28 @@
           db.clubs.push({ id: cid, name: a.p_name.trim() }); db.club_admins.push({ club_id: cid, user_id: me });
           persist(); ok({ data: cid, error: null }); return;
         }
+        if (name === 'leave_club' || name === 'delete_club') {
+          var cl = a.p_club_id, mineAll = db.club_admins.filter(function (x) { return x.user_id === me; });
+          if (!mineAll.some(function (x) { return x.club_id === cl; })) fail('not a club admin', '42501');
+          if (mineAll.length <= 1) fail('only_club', 'P0001');
+          if (name === 'leave_club') {
+            if (db.club_admins.filter(function (x) { return x.club_id === cl; }).length <= 1) fail('last_admin', 'P0001');
+            db.club_admins = db.club_admins.filter(function (x) { return !(x.club_id === cl && x.user_id === me); });
+          } else {
+            var club = db.clubs.filter(function (c) { return c.id === cl; })[0];
+            if (!club || club.name !== (a.p_name || '').trim()) fail('name_mismatch', 'P0001');
+            var sids = db.sessions.filter(function (x) { return x.club_id === cl; }).map(function (x) { return x.id; });
+            var mids = db.matches.filter(function (m) { return sids.indexOf(m.session_id) >= 0; }).map(function (m) { return m.id; });
+            db.match_players = db.match_players.filter(function (x) { return mids.indexOf(x.match_id) < 0; });
+            db.matches = db.matches.filter(function (m) { return mids.indexOf(m.id) < 0; });
+            ['session_players', 'rating_adjustments'].forEach(function (t) { db[t] = db[t].filter(function (x) { return sids.indexOf(x.session_id) < 0; }); });
+            db.sessions = db.sessions.filter(function (x) { return x.club_id !== cl; });
+            db.players = db.players.filter(function (x) { return x.club_id !== cl; });
+            db.club_admins = db.club_admins.filter(function (x) { return x.club_id !== cl; });
+            db.clubs = db.clubs.filter(function (c) { return c.id !== cl; });
+          }
+          persist(); ok({ data: null, error: null }); return;
+        }
         var s = db.sessions.filter(function (x) { return x.id === a.p_session_id && x.status === 'open'; })[0];
         if (!s) fail('session ' + a.p_session_id + ' is not open', 'P0002');
         if (name === 'sync_session') {
@@ -119,7 +141,7 @@
           db.rating_adjustments = db.rating_adjustments.filter(function (x) { return x.session_id !== s.id; })
             .concat(a.p_adjustments.map(function (x) { return { session_id: s.id, player_id: x.id, at_seq: x.at, to_mmr: x.to }; }));
         } else if (name === 'close_session') {
-          a.p_players.forEach(function (r) { var p = db.players.filter(function (x) { return x.id === r.id; })[0]; if (p) { p.start_mmr = r.start_mmr; p.career_games = r.career_games; } });
+          a.p_players.forEach(function (r) { var p = db.players.filter(function (x) { return x.id === r.id; })[0]; if (p) { p.start_mmr = r.start_mmr; p.start_sigma = r.start_sigma; p.career_games = r.career_games; } });
           s.status = 'closed'; s.ended_at = new Date().toISOString(); s.played_on = today(); s.state = null;
         } else fail('unknown rpc ' + name);
         persist(); ok({ data: null, error: null });

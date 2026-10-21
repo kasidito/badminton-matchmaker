@@ -1,4 +1,4 @@
-# จัดคู่ก๊วนแบด (Badminton Matchmaker)
+# Budmintan (จัดคู่ก๊วนแบด)
 
 A web app for running a badminton club night. The admin checks players in, the app draws doubles matches court by court so everyone plays a similar number of games, results go into an MMR ranking, and every match is saved to Supabase.
 
@@ -6,16 +6,18 @@ Built for one admin on an iPad or phone at the court. Players do not log in.
 
 ## What it does
 
-- **Check-in**: paste the LINE sign-up post as it is ("พุธ … 3 สนาม / 1. ชิน 2. โฟล์ค …"). Existing members are checked in, new names are added, and the court count is taken from "N สนาม" if play hasn't started.
+- **Check-in**: paste the LINE sign-up post as it is ("พุธ … 3 สนาม / 1. ชิน 2. โฟล์ค …"). Existing members are checked in, new names are added, and the court count is taken from "N สนาม" if play hasn't started. Names spelled close to an existing member are asked about ("ใช่คนเดิมไหม") and the spelling is remembered. New members can be added offline; they are saved when the connection is back.
 - **Fair rotation**: whoever has played the fewest matches goes on next; ties go to whoever has waited longest. Late arrivals start level with the person who has played least.
 - **Court by court**: each court is drawn, played and saved on its own. Saving a result leaves the court empty until the admin draws it again. Nothing is drawn automatically.
 - **Manual swap**: tap a player, then tap another player on any court or in the queue to swap them.
 - **Court modes**: Normal, Competitive (close ratings) and Social (strong and new players mixed, half MMR weight), set per court.
-- **MMR**: Elo-based, team aware. Starting level sets the first rating (beginner 1300, intermediate 1500, advanced 1700).
+- **MMR**: OpenSkill (Weng-Lin) on an MMR-like scale, with uncertainty per player. Five starting levels (1200–1800). Six bird ranks from ลูกเจี๊ยบ to ฟีนิกซ์.
 - **History**: fix or delete any of tonight's results and ratings recalculate. "End day" closes the night and carries MMR forward.
 - **Undo**: every draw, save, swap, reset and MMR edit can be undone step by step from the header, for the whole night.
 - **Next up**: the first empty court shows the 4 people the next draw will take.
-- **Google Sheet report**: on End day the night's results, every match and the latest ranking are appended to a Google Sheet.
+- **LINE summary**: one tap shares tonight's (or any past night's) ranking, rank-ups and games per person through the phone's share sheet.
+- **All-time stats**: nights, games, win rate, MMR graph, best partner, toughest opponent and longest win streak per member.
+- **Clubs**: separate ก๊วน with their own members, nights and admins.
 - **Backups**: Settings → ดาวน์โหลดข้อมูลทั้งหมด saves every table as a JSON file.
 - **Password**: forgot-password email and change-password in Settings.
 - **Works offline**: every change is kept on the device and saved to Supabase as soon as the connection is back. The header shows the save status.
@@ -66,18 +68,6 @@ Project `badminton-matchmaker` (Singapore, `vhvlhuimelqsnglhayxs`).
 4. Authentication → URL Configuration: set **Site URL** to `https://kasidito.github.io/badminton-matchmaker/` and add the same address under **Redirect URLs**. The forgot-password email links back here.
 
 Row level security limits every row to the admins of its club (`club_admins`); a signed-in user who runs no club sees nothing. The key in `js/config.js` is the publishable key, which is meant to be public. Never commit the `service_role` key.
-
-### Google Sheet report
-
-1. Create a spreadsheet (sheets.new), e.g. "รายงานก๊วนแบด".
-2. Extensions → Apps Script. Replace the code with `tools/google-sheet-report.gs`.
-3. In the app: Settings → รายงาน Google Sheet → สร้างรหัสใหม่ → คัดลอกรหัส. Paste it into the script's `TOKEN` line and save.
-   Then choose `setup` in the function menu and press Run once: it creates the four tabs and asks for permission.
-4. In Apps Script: Deploy → New deployment → type **Web app**, Execute as **Me**, Who has access **Anyone** → Deploy, allow access, copy the Web app URL.
-5. In the app: paste the URL → บันทึกและส่งทดสอบ. "เชื่อม Google Sheet สำเร็จ" means it works.
-
-The URL and token are stored on that device only. If sending fails on End day, the report waits on the device; Settings shows ส่งรายงานที่ค้าง to retry. Sending the same night twice is ignored by the script.
-If you change the script later, use Deploy → Manage deployments → edit → New version, so the URL stays the same.
 
 ### Hosting on GitHub Pages
 

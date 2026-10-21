@@ -4,7 +4,7 @@
   "private": true,
   "description": "Club night matchmaking, MMR and history for a badminton group. Static site + Supabase.",
   "scripts": {
-    "test": "node --test tests/algo.test.js tests/sheet-script.test.js",
+    "test": "node --test tests/algo.test.js",
     "smoke": "node tests/smoke.js",
     "flows": "node tests/flows.js",
     "e2e": "node tests/smoke.js && node tests/flows.js",

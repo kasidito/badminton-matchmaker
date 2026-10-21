@@ -39,13 +39,17 @@
     return { played: played, P: P, O: O };
   }
 
-  /* Elo v2. Each player's expectation uses their own rating (75%) and partner (25%) against the
-     opponent team average. K = 48 for the first 10 career matches, then 24. Social courts count half.
-     adj = manual edits [{at: matchIndex, id, to}] applied before that match is replayed.
+  /* OpenSkill (Weng-Lin, Bradley-Terry, two teams), on the MMR scale: mu starts at the level's MMR and
+     sigma is the uncertainty. 1 OpenSkill point = SCALE MMR, so defaults are mu 25 -> 1500, sigma 25/3 -> 125.
+     A new player moves about 30 MMR a match; a settled one (sigma ~50) about 10. Social courts count half.
+     adj = manual edits [{at: matchIndex, id, to}] set mu before that match is replayed (sigma is kept).
      trail (optional array) receives {before:{id:r}, after:{id:r}} per match index. */
+  var SCALE = 15, SIG0 = 25 / 3 * SCALE, BETA = SIG0 / 2, TAU = 25 / 300 * SCALE, KAPPA = 0.0001;
+  var SETTLED = 105;   // sigma below this ~ 10 matches played; above it the rating is shown as "ยังไม่นิ่ง"
+  function sigmaOf(p) { return p.sigma == null ? SIG0 : p.sigma; }
   function ratings(done, players, adj, trail) {
-    var R = {}, G = {}, W = {}, C = {}, B = {};
-    players.forEach(function (p) { R[p.id] = startOf(p); G[p.id] = 0; W[p.id] = 0; C[p.id] = p.games || 0; B[p.id] = birdIndex(R[p.id]); });
+    var R = {}, Sg = {}, G = {}, W = {}, C = {}, B = {};
+    players.forEach(function (p) { R[p.id] = startOf(p); Sg[p.id] = sigmaOf(p); G[p.id] = 0; W[p.id] = 0; C[p.id] = p.games || 0; B[p.id] = birdIndex(R[p.id]); });
     function applyAdj(k) { (adj || []).forEach(function (a) { if (a.at === k && (a.id in R)) { R[a.id] = a.to; B[a.id] = birdIndex(a.to); } }); }
     for (var i = 0; i < done.length; i++) {
       applyAdj(i);
@@ -53,28 +57,35 @@
       ids.forEach(function (id) { if (!(id in R)) ok = false; });
       if (!ok || !hasRes(m)) { if (trail) trail[i] = null; continue; }
       var mult = MODE_W[m.mode || 'normal'] || 1;
-      var avg = [(R[m.t[0][0]] + R[m.t[0][1]]) / 2, (R[m.t[1][0]] + R[m.t[1][1]]) / 2];
-      var d = {}, before = {};
-      ids.forEach(function (id) { before[id] = R[id]; });
+      var before = {};
+      ids.forEach(function (id) { before[id] = R[id]; Sg[id] = Math.sqrt(Sg[id] * Sg[id] + TAU * TAU); });
+      var T = m.t.map(function (t) { return { mu: R[t[0]] + R[t[1]], s2: Sg[t[0]] * Sg[t[0]] + Sg[t[1]] * Sg[t[1]] }; });
+      var c = Math.sqrt(T[0].s2 + T[1].s2 + 2 * BETA * BETA);
+      var p0 = 1 / (1 + Math.exp((T[1].mu - T[0].mu) / c)), pr = [p0, 1 - p0];
+      var nr = {}, ns = {};
       [0, 1].forEach(function (s) {
-        var team = m.t[s], opp = avg[1 - s], won = m.w === s ? 1 : 0;
-        team.forEach(function (id, j) {
-          var eff = 0.75 * R[id] + 0.25 * R[team[1 - j]];
-          var e = 1 / (1 + Math.pow(10, (opp - eff) / 400));
-          var k = C[id] < 10 ? 48 : 24;
-          d[id] = k * mult * (won - e);
+        var won = m.w === s ? 1 : 0;
+        var delta = T[s].s2 / c * (won - pr[s]);
+        var eta = Math.sqrt(T[s].s2) / c * T[s].s2 / (c * c) * pr[s] * pr[1 - s];
+        m.t[s].forEach(function (id) {
+          var share = Sg[id] * Sg[id] / T[s].s2;
+          nr[id] = R[id] + share * delta * mult;
+          ns[id] = Math.sqrt(Sg[id] * Sg[id] * Math.max(1 - share * eta * mult, KAPPA));
         });
       });
-      ids.forEach(function (id) { R[id] += d[id]; G[id]++; C[id]++; B[id] = stepBird(B[id], R[id]); });
+      ids.forEach(function (id) { R[id] = nr[id]; Sg[id] = ns[id]; G[id]++; C[id]++; B[id] = stepBird(B[id], R[id]); });
       m.t[m.w].forEach(function (id) { W[id]++; });
       if (trail) { var after = {}; ids.forEach(function (id) { after[id] = R[id]; }); trail[i] = { before: before, after: after }; }
     }
     applyAdj(done.length);
-    return { R: R, G: G, W: W, C: C, B: B };
+    return { R: R, Sg: Sg, G: G, W: W, C: C, B: B };
   }
-  function winProb(R, t) {
-    var a = (R[t[0][0]] + R[t[0][1]]) / 2, b = (R[t[1][0]] + R[t[1][1]]) / 2;
-    return 1 / (1 + Math.pow(10, (b - a) / 400));
+  function settled(RT, id) { return RT.Sg[id] < SETTLED; }
+  /* chance team 0 wins, from the same model (needs RT from ratings for the sigmas) */
+  function winProb(RT, t) {
+    var a = RT.R[t[0][0]] + RT.R[t[0][1]], b = RT.R[t[1][0]] + RT.R[t[1][1]];
+    var s2 = [t[0][0], t[0][1], t[1][0], t[1][1]].reduce(function (x, id) { return x + RT.Sg[id] * RT.Sg[id]; }, 0);
+    return 1 / (1 + Math.exp((b - a) / Math.sqrt(s2 + 2 * BETA * BETA)));
   }
   function liveIds(T) { var o = []; T.live.forEach(function (c) { if (c) o = o.concat(c.t[0], c.t[1]); }); return o; }
   function isStale(T, c) {
@@ -248,10 +259,10 @@
       matches: T.done.map(function (m) { return { t: [m.t[0].map(nm), m.t[1].map(nm)], w: m.w, mode: m.mode || 'normal' }; })
     };
   }
-  /* MMR and career games each player carries into the next session */
+  /* MMR, uncertainty and career games each player carries into the next session */
   function carryForward(T) {
     var RT = ratings(T.done, T.players, T.adj);
-    return T.players.map(function (p) { return { id: p.id, start_mmr: Math.round(RT.R[p.id]), career_games: RT.C[p.id] }; });
+    return T.players.map(function (p) { return { id: p.id, start_mmr: Math.round(RT.R[p.id]), start_sigma: Math.round(RT.Sg[p.id] * 100) / 100, career_games: RT.C[p.id] }; });
   }
   function endGame(T, label) {
     if (!T.done.length) return null;
@@ -259,13 +270,50 @@
     var carry = carryForward(T), byId = {};
     carry.forEach(function (c) { byId[c.id] = c; });
     T.days.push(snap);
-    T.players.forEach(function (p) { p.start = byId[p.id].start_mmr; p.games = byId[p.id].career_games; p.base = 0; p.freeSince = 0; p.rest = false; });
+    T.players.forEach(function (p) { p.start = byId[p.id].start_mmr; p.sigma = byId[p.id].start_sigma; p.games = byId[p.id].career_games; p.base = 0; p.freeSince = 0; p.rest = false; });
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
     return snap;
   }
   function resetGame(T) {
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
-    T.players.forEach(function (p) { p.base = 0; p.start = LV[p.level || 'I']; p.games = 0; p.freeSince = 0; p.rest = false; });
+    T.players.forEach(function (p) { p.base = 0; p.start = LV[p.level || 'I']; p.sigma = null; p.games = 0; p.freeSince = 0; p.rest = false; });
+  }
+  /* renumber a player everywhere in a night (a member added offline gets its real id after the first sync) */
+  function remapId(T, from, to) {
+    var sw = function (t) { for (var i = 0; i < t.length; i++) if (t[i] === from) t[i] = to; };
+    T.players.forEach(function (p) { if (p.id === from) p.id = to; });
+    T.live.forEach(function (c) { if (c) c.t.forEach(sw); });
+    T.done.forEach(function (m) { m.t.forEach(sw); });
+    T.adj.forEach(function (x) { if (x.id === from) x.id = to; });
+  }
+  /* names from LINE posts are spelled loosely: compare without spaces, dots, case or Thai tone marks */
+  function nameKey(n) { return String(n).toLowerCase().replace(/[\s.\-_'"()]+/g, '').replace(/[\u0E48-\u0E4C]/g, ''); }
+  function editDistance(a, b) {
+    if (Math.abs(a.length - b.length) > 2) return 3;
+    var prev = []; for (var j = 0; j <= b.length; j++) prev[j] = j;
+    for (var i = 1; i <= a.length; i++) {
+      var cur = [i];
+      for (var k = 1; k <= b.length; k++) cur[k] = Math.min(prev[k] + 1, cur[k - 1] + 1, prev[k - 1] + (a[i - 1] === b[k - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+  /* exact = same name or a saved alias (case-insensitive); similar = members the admin should be asked about */
+  function matchName(name, players) {
+    var low = String(name).toLowerCase(), key = nameKey(name);
+    var exact = players.filter(function (p) {
+      return p.name.toLowerCase() === low || (p.aliases || []).some(function (a) { return String(a).toLowerCase() === low; });
+    })[0];
+    if (exact) return { exact: exact, similar: [] };
+    var similar = players.filter(function (p) {
+      var k = nameKey(p.name);
+      if (!k || !key) return false;
+      if (k === key) return true;
+      var lim = Math.min(k.length, key.length) >= 6 ? 2 : Math.min(k.length, key.length) >= 3 ? 1 : 0;
+      if (lim && editDistance(k, key) <= lim) return true;
+      return Math.min(k.length, key.length) >= 3 && (k.indexOf(key) === 0 || key.indexOf(k) === 0);
+    });
+    return { exact: null, similar: similar.slice(0, 3) };
   }
   /* Accepts a pasted LINE sign-up post ("1. ชิน") or a comma/newline list. Returns names. */
   function parseNames(text) {
@@ -288,8 +336,8 @@
   }
 
   var Algo = {
-    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP, toggleRest: toggleRest,
-    stats: stats, ratings: ratings, winProb: winProb, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
+    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP, toggleRest: toggleRest, remapId: remapId, matchName: matchName, nameKey: nameKey,
+    stats: stats, ratings: ratings, winProb: winProb, settled: settled, SIG0: SIG0, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,
     setCourtCount: setCourtCount, minCredit: minCredit, daySnapshot: daySnapshot, carryForward: carryForward,

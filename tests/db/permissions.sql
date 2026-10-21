@@ -42,6 +42,14 @@ begin
   begin insert into public.club_admins (club_id, user_id) values (cid, c); r := r || ', B self-manages club_admins=ALLOWED(BAD)';
   exception when others then r := r || ', B inserts club_admins directly=blocked'; end;
   perform public.create_club('B second club'); r := r || ', B create_club=ok';
+  begin perform public.delete_club(1, 'ก๊วนแบด'); r := r || ', B deletes club1=ALLOWED(BAD)';
+  exception when others then r := r || ', B deletes club1=blocked'; end;
+  begin perform public.delete_club(cid, 'wrong name'); r := r || ', delete with wrong name=ALLOWED(BAD)';
+  exception when others then r := r || ', delete with wrong name=blocked'; end;
+  perform public.delete_club(cid, 'RLS test club'); r := r || ', B deletes own test club=ok';
+  select count(*) into n from public.players where club_id = cid; r := r || ' (its players left=' || n || ')';
+  begin perform public.leave_club((select max(id) from public.clubs)); r := r || ', B leaves only club=ALLOWED(BAD)';
+  exception when others then r := r || ', B leaves only club=blocked'; end;
   execute 'reset role';
 
   perform set_config('request.jwt.claims', json_build_object('sub', c)::text, true);
@@ -66,6 +74,8 @@ begin
   select count(*) into n from public.clubs; r := r || ', clubs=' || n || ' (owner left the test club)';
   begin insert into public.sessions (club_id, title) values (1, 'second open'); r := r || ', second open night in club1=ALLOWED(BAD)';
   exception when unique_violation then r := r || ', second open night in club1=blocked'; end;
+  begin perform public.leave_club(1); r := r || ', owner leaves only club=ALLOWED(BAD)';
+  exception when others then r := r || ', owner leaves only club=blocked'; end;
   begin insert into public.players (club_id, name) values (1, 'ชิน'); r := r || ', duplicate name in club1=ALLOWED(BAD)';
   exception when unique_violation then r := r || ', duplicate name in club1=blocked'; end;
   execute 'reset role';

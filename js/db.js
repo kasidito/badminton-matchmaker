@@ -1,4 +1,5 @@
-/* Thin wrapper around Supabase. Every function throws on error so callers can show it. */
+/* Thin wrapper around Supabase. Every function throws on error so callers can show it.
+   players are read with select('*') so the app keeps working while a newer column (start_sigma, aliases) is being rolled out. */
 (function (root) {
   'use strict';
   var c = null;
@@ -29,13 +30,15 @@
     setClub: function (id) { club = id; },
     createClub: async function (name) { return must(await c.rpc('create_club', { p_name: name })); },
     renameClub: async function (id, name) { must(await c.from('clubs').update({ name: name }).eq('id', id)); },
+    leaveClub: async function (id) { must(await c.rpc('leave_club', { p_club_id: id })); },
+    deleteClub: async function (id, name) { must(await c.rpc('delete_club', { p_club_id: id, p_name: name })); },
 
     /* players */
     loadPlayers: async function () {
-      return must(await c.from('players').select('id,name,level,start_mmr,career_games,active').eq('club_id', club).order('id'));
+      return must(await c.from('players').select('*').eq('club_id', club).order('id'));
     },
     addPlayer: async function (name, level) {
-      return must(await c.from('players').insert({ club_id: club, name: name, level: level || 'I' }).select('id,name,level,start_mmr,career_games,active').single());
+      return must(await c.from('players').insert({ club_id: club, name: name, level: level || 'I' }).select('*').single());
     },
     setPlayerActive: async function (id, active) {
       must(await c.from('players').update({ active: active }).eq('id', id));
@@ -68,8 +71,14 @@
     updatePlayer: async function (id, fields) {
       must(await c.from('players').update(fields).eq('id', id));
     },
-    markExported: async function (id) {
-      must(await c.from('sessions').update({ sheet_exported_at: new Date().toISOString() }).eq('id', id));
+    /* every finished and open match of this club, for the all-time stats page */
+    loadAllStats: async function () {
+      var sess = must(await c.from('sessions').select('id,played_on,status').eq('club_id', club).order('id'));
+      var ids = sess.map(function (s) { return s.id; });
+      if (!ids.length) return { sessions: [], matches: [] };
+      var ms = must(await c.from('matches').select('id,session_id,seq,team_a,team_b,winner,ended_at,match_players(player_id,won,rating_after)')
+        .in('session_id', ids).order('session_id').order('seq'));
+      return { sessions: sess, matches: ms };
     },
     sync: async function (sessionId, p) {
       return must(await c.rpc('sync_session', {

@@ -82,14 +82,23 @@ test('swap with the queue, across courts, and clears a picked winner', () => {
   assert.ok(uniqueOnCourt(T));
 });
 
-test('weaker partner gains more for the same win; social counts half', () => {
+test('OpenSkill: new players move ~30, the less certain partner moves more, upsets pay more, social counts half', () => {
   const T = session(4, ['normal'], 0);
-  T.players[0].start = 1700; T.players[1].start = 1300;
+  const one = A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'normal' }], T.players, []);
+  assert.ok(Math.abs(one.R[1] - 1500 - 29) < 3, 'first win is worth about 29');
+  assert.ok(one.R[3] < 1500 && one.R[4] < 1500);
+  assert.ok(one.Sg[1] < A.SIG0, 'uncertainty shrinks after a match');
+  T.players[0].sigma = 50;                       // player 1 settled, partner 2 new
   const r = A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'normal' }], T.players, []).R;
-  assert.ok(r[2] - 1300 > r[1] - 1700);
-  assert.ok(r[3] < 1500 && r[4] < 1500);
-  const rs = A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'social' }], T.players, []).R;
-  assert.ok(Math.abs((rs[1] - 1700) * 2 - (r[1] - 1700)) < 1e-9);
+  assert.ok(r[2] - 1500 > r[1] - 1500, 'new partner moves more');
+  T.players[0].sigma = null; T.players[0].start = 1350; T.players[1].start = 1350;
+  const up = A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'normal' }], T.players, []).R;
+  assert.ok(up[1] - 1350 > one.R[1] - 1500, 'beating a stronger team pays more');
+  const n = A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'normal' }], session(4, ['normal'], 0).players, []).R;
+  const so = A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'social' }], session(4, ['normal'], 0).players, []).R;
+  assert.ok(Math.abs((so[1] - 1500) * 2 - (n[1] - 1500)) < 1e-9);
+  const p = A.winProb(one, [[1, 2], [3, 4]]);
+  assert.ok(p > 0.5 && p < 0.7, 'winners are now slightly favoured: ' + p);
 });
 
 test('rating trail records before and after for each match', () => {
@@ -165,3 +174,25 @@ test('a player asked to rest sits out exactly one draw, then is first in line', 
   assert.strictEqual(A.findP(T, first).rest, false, 'rest clears after being skipped once');
   assert.strictEqual(A.queueOrder(T, null)[0].id, first, 'back at the front');
 });
+
+test('name matching: aliases are exact, loose spellings are only suggested', () => {
+  const P = [{ id: 1, name: 'นัทซ้าย', aliases: [] }, { id: 2, name: 'ป๊อป', aliases: ['pop'] }, { id: 3, name: 'Ard', aliases: [] }, { id: 4, name: 'ภู', aliases: [] }];
+  assert.strictEqual(A.matchName('ard', P).exact.id, 3);
+  assert.strictEqual(A.matchName('POP', P).exact.id, 2);
+  assert.deepStrictEqual(A.matchName('นัท ซ้าย', P).similar.map(p => p.id), [1]);
+  assert.deepStrictEqual(A.matchName('ป็อป', P).similar.map(p => p.id), [2]);
+  assert.deepStrictEqual(A.matchName('Ardd', P).similar.map(p => p.id), [3]);
+  assert.deepStrictEqual(A.matchName('ภูมิ', P).similar, [], 'two-letter names are not guessed');
+  assert.deepStrictEqual(A.matchName('มิว', P).similar, []);
+});
+
+test('remapId moves a player everywhere in the night', () => {
+  const T = session(8, ['normal', 'normal'], 0);
+  A.fillEmpty(T, Math.random);
+  const id = T.live[0].t[0][0];
+  T.done.push({ t: [[id, 2], [3, 4]], w: 0 }); T.adj.push({ at: 0, id, to: 1600 });
+  A.remapId(T, id, 99);
+  assert.strictEqual(T.live[0].t[0][0], 99); assert.strictEqual(T.done[0].t[0][0], 99); assert.strictEqual(T.adj[0].id, 99);
+  assert.ok(A.findP(T, 99) && !A.findP(T, id));
+});
+

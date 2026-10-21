@@ -6,7 +6,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 
 - **Admin only.** One admin runs the night on an iPad or phone. Players never log in. Don't add player accounts, sign-up, or public pages unless asked.
 - **Clubs (ก๊วน).** Every player and night belongs to a club; admins are per club (`club_admins`). An admin can create another club from Settings and becomes its admin, then adds that club's admins. No self sign-up (owner's choice, Oct 2026).
-- **Supabase is the system of record.** Google Sheets is only a report (planned: append a summary on End day). Don't use Sheets as storage.
+- **Supabase is the system of record.** The Google Sheet report was removed (owner's call, 21 Oct 2026); results leave the app as a LINE summary text.
 - **Hosting:** static files on GitHub Pages. No build step, no framework. Keep it plain HTML/CSS/JS with supabase-js loaded from jsDelivr at a pinned version.
 - **UI language is Thai.** Code, comments and docs are English.
 - **No emojis anywhere in the UI.** Icons are inline SVG symbols in `index.html` (`<use href="#i-name">`).
@@ -23,22 +23,21 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 5. **Modes:** Competitive adds `spread/5` (wants close ratings); Social subtracts `spread/12` (wants a mix).
 6. Simulations: match-count spread is usually at most 2 during a night and occasionally 3 for a short time, because courts finish at different times (tested with a bound of 3). A hard guard stops modes from skipping anyone who is 2+ matches behind. Competitive narrows rating spread only modestly when the queue is short (e.g. 16 players / 3 courts); that's expected.
 
-## MMR (Elo v2)
+## Ratings (OpenSkill, shown as MMR)
 
 - Start levels (`players.level`, `players.start_mmr`): B เพิ่งเริ่ม 1200, N มือใหม่ 1350, I กลาง 1500, A เก่ง 1650, P โหด 1800. New names from a check-in get a level picker card on the people tab.
 - **Bird ranks** (`A.BIRDS`, computed in `ratings()` as `RT.B`): ลูกเจี๊ยบ <1275, นกกระจอก 1275, นกพิราบ 1425, เหยี่ยว 1575, อินทรี 1725, ฟีนิกซ์ 1875. Up as soon as the floor is reached, down only after falling 25 below it (`stepBird`). Each start level lands in its own bird. Saving a result toasts rank changes. Illustrations are emblem symbols `#b-<bird>` in `index.html` (fixed colours on purpose): the frame metal climbs with the rank (iron coin, bronze coin, silver shield, gold shield, platinum shield with star, fire shield with crown), and wings break out of the frame from เหยี่ยว up. Source: drawn by a small generator; edit the symbols directly.
-- Expectation per player: `eff = 0.75*own + 0.25*partner` against the opponent team average.
-- K = 48 for a player's first 10 career matches (`career_games`), then 24. Social courts x0.5.
+- OpenSkill Weng-Lin Bradley-Terry for two teams, scaled so 1 OpenSkill point = 15 MMR: mu starts at the level MMR, sigma at 125 (`A.SIG0`), beta 62.5, tau 1.25. Team strength is the sum of the two players; each player's share of the change is their sigma² over the team's. A new player moves ~30 MMR per match, a settled one (sigma ~50) ~10. Social courts count half. `A.settled(RT, id)` = sigma < 105 (about 10 matches); below that the UI shows ยังไม่นิ่ง. `winProb(RT, t)` uses the same model.
+- Switched from Elo on 21 Oct 2026 before any real matches were played, so nothing needed converting.
 - Ratings are always **recomputed by replaying tonight's matches** from `start` plus manual edits (`S.adj`, applied before match index `at`). Never store a running rating in state. Editing or deleting a past match must just change `S.done`.
-- End day: `carryForward()` → `players.start_mmr`, `career_games`.
-- Planned upgrade: OpenSkill, recalculated from `match_players` history.
+- End day: `carryForward()` → `players.start_mmr` (mu), `players.start_sigma`, `career_games` (via `close_session`).
 
 ## State shape (`S`, version 4)
 
 ```js
 {
   v: 4, sessionId, title,
-  players: [{ id, name, active /* here tonight */, base, level: 'N'|'I'|'A', start, games, freeSince }],
+  players: [{ id, name, active /* here tonight */, base, level: 'B'|'N'|'I'|'A'|'P', start /* mu */, sigma, games, freeSince, qr, rest, aliases, pending /* added offline, negative id */ }],
   courts:  [{ mode: 'normal'|'competitive'|'social' }],
   live:    [null | { t: [[a,b],[c,d]], w: null|0|1, at }],   // one slot per court
   done:    [{ t, w, mode, court, at, end }],                  // finished matches, in order
@@ -56,9 +55,12 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 - Failure: keep `dirty`, retry every 10 s and on `online`. The header pill shows the status; tapping it retries.
 - Boot: an unsynced local cache for the same session beats the server snapshot.
 - If the session was closed elsewhere (error code `P0002`), open a new session and retry.
-- Adding or removing members needs to be online (inserts need DB ids). Level changes are also written straight to `players` so they stick before a night is open.
+- **Adding members offline**: a new name that cannot be inserted because the network is down becomes a local member with a temporary negative id (`pending`). `runSync` first calls `flushPending()`, which inserts them (or matches an existing name on unique-violation) and renumbers them everywhere with `A.remapId`. Removing members still needs to be online. Level changes are also written straight to `players` so they stick before a night is open.
+- **Check-in names**: `A.matchName` treats the same name or a saved alias (`players.aliases`) as the member, and only suggests near spellings (no spaces/dots/tone marks, edit distance 1–2, prefix) for the admin to confirm (`ui.nameAsk`). Answering ใช่ saves the spelling as an alias.
+- **Clubs**: Settings → ก๊วน can rename, switch, create, leave (`leave_club`, not the last admin, not your only club) and delete (`delete_club`, type the name; removes its nights and members).
+- **Summary**: ส่งไป LINE uses `navigator.share` (falls back to the clipboard) with plain text from `dayText()`. ทุกคืน loads every match of the club (`DB.loadAllStats`) and computes per-member nights, games, win %, MMR trail, best partner, toughest opponent and longest streak.
+- `<details>` remember only the admin's own taps (`det(key)`, reset when switching club), so a confirm tap that re-renders does not close a section.
 - **Undo** is an in-memory stack of state snapshots (`ui.undos`, max 30), pushed by `toast(msg, snapshot)`. Undo keeps the current `sessionId`, `title` and `days`. Cleared on End day.
-- **Google Sheet report**: `buildReport()` before closing; queued in localStorage (`bmm-sheet-queue`) and posted as `text/plain` JSON to the Apps Script web app (`tools/google-sheet-report.gs`, idempotent per night id). URL and token live in localStorage (`bmm-sheet`), per device. Success sets `sessions.sheet_exported_at`.
 - **Edit a member**: pencil on the member row opens name + MMR. The name is written straight to `players` (unique, needs online); the MMR becomes a normal `S.adj` edit (undoable).
 - **Other admins**: Settings → ผู้ดูแลก๊วน calls the `manage-admins` edge function (`supabase/functions/manage-admins`, deployed with verify_jwt, uses the service role and checks the caller runs the `club_id` sent by the app). Actions per club: list, add (creates the auth user with a starting password, no email, or adds an existing account), remove (not self, not the last), reset another admin's password (only if every club they run is one the caller also runs). `tests/fake-supabase.js` mirrors it under `functions.invoke`.
 - **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address. Without custom SMTP, Supabase only emails addresses that are members of the Supabase org team, so for other admins the fallback is an admin setting a new password for them in ผู้ดูแลก๊วน.
@@ -74,7 +76,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 ## Commands
 
 ```bash
-npm test          # node --test tests/algo.test.js tests/sheet-script.test.js
+npm test          # node --test tests/algo.test.js
 npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases, undo, admins, clubs, password) against tests/fake-supabase.js
 npm run explore   # seeded random long run with invariant checks (phone/iPad, light/dark)
 npm run test:db   # all migrations in PGlite + per-user permission checks (tests/db/permissions.sql)

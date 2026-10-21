@@ -105,6 +105,34 @@
     sync.dirty = true; writeCache(); setStatus('pending');
     clearTimeout(sync.timer); sync.timer = setTimeout(runSync, 1200);
   }
+  /* members added while offline carry a temporary negative id; give them real ids before anything else syncs */
+  async function flushPending() {
+    var pend = S.players.filter(function (p) { return p.pending; });
+    for (var i = 0; i < pend.length; i++) {
+      var p = pend[i], row;
+      try { row = await DB.addPlayer(p.name, p.level || 'I'); }
+      catch (e) {
+        if (e.code !== '23505') throw e;           // the name exists (added elsewhere or removed earlier): use that member
+        row = (await DB.loadPlayers()).filter(function (x) { return x.name.toLowerCase() === p.name.toLowerCase(); })[0];
+        if (!row) throw e;
+        if (!row.active) await DB.setPlayerActive(row.id, true);
+      }
+      var old = p.id;
+      if (S.players.some(function (q) { return q !== p && q.id === row.id; })) S.players = S.players.filter(function (q) { return q !== p; });
+      A.remapId(S, old, row.id);
+      p.pending = false;
+      ui.newIds = (ui.newIds || []).map(function (x) { return x === old ? row.id : x; });
+      if (ui.sel && ui.sel.id === old) ui.sel.id = row.id;
+      if (ui.editPlayer === old) ui.editPlayer = row.id;
+    }
+    if (pend.length) { writeCache(); render(); }
+  }
+  function isOffline(e) { return !navigator.onLine || /fetch|network|load failed|timeout/i.test(errMsg(e)); }
+  var tempSeq = 0;
+  function pendingPlayer(n, base) {
+    var p = fromRow({ id: -(Date.now() % 1000000000) * 10 - (tempSeq++ % 10), name: n, level: 'I', start_mmr: A.LV.I, career_games: 0, aliases: [] }, true, base);
+    p.pending = true; return p;
+  }
   /* A night is opened on the first change that belongs to it (check-in, draw, result, MMR edit). */
   function needsSession() {
     return S.done.length > 0 || S.adj.length > 0 || S.live.some(Boolean) || S.players.some(function (p) { return p.active; });
@@ -125,6 +153,7 @@
     if (sync.running || !sync.dirty) return;
     sync.running = true; sync.dirty = false; setStatus('saving');
     try {
+      await flushPending();
       if (!S.sessionId) {
         if (!needsSession()) { writeCache(); setStatus('saved'); return; }
         await openOrCreateSession();
@@ -196,7 +225,7 @@
     await startFor(user);
   }
   function fromRow(row, active, base) {
-    return { id: row.id, name: row.name, active: !!active, base: base || 0, level: row.level, start: row.start_mmr, games: row.career_games, freeSince: active ? Date.now() : 0, qr: Math.random() };
+    return { id: row.id, name: row.name, active: !!active, base: base || 0, level: row.level, start: row.start_mmr, sigma: row.start_sigma == null ? null : +row.start_sigma, aliases: row.aliases || [], games: row.career_games, freeSince: active ? Date.now() : 0, qr: Math.random() };
   }
   /* session may be null: tonight has not been opened yet */
   function buildState(session, rows, cache) {
@@ -214,9 +243,10 @@
     var used = {}; st.done.forEach(function (m) { m.t[0].concat(m.t[1]).forEach(function (id) { used[id] = 1; }); });
     st.live.forEach(function (c) { if (c) c.t[0].concat(c.t[1]).forEach(function (id) { used[id] = 1; }); });
     var keep = [];
+    st.players.forEach(function (p) { if (p.pending) keep.push(p); });   // added offline, not in the database yet
     rows.forEach(function (r) {
       var p = have[r.id];
-      if (p) { p.name = r.name; if (r.active || used[r.id]) keep.push(p); }
+      if (p) { p.name = r.name; p.aliases = r.aliases || []; p.sigma = r.start_sigma == null ? null : +r.start_sigma; if (r.active || used[r.id]) keep.push(p); }
       else if (r.active) keep.push(fromRow(r, false, 0));
     });
     st.players = keep;
@@ -238,6 +268,26 @@
     ui.clubs = clubs || [club];
     await openClub(club);
   }
+  /* leave or delete the current club, then move to another one this admin runs */
+  async function dropClub(call, okMsg) {
+    var gone = ui.club;
+    ui.busy = 'กำลังบันทึก…'; render();
+    try { await flushSync(); } catch (e) { }
+    try { await call(); }
+    catch (e) {
+      ui.busy = null;
+      var m = errMsg(e);
+      toast(/last_admin/.test(m) ? 'คุณเป็นผู้ดูแลคนเดียว ให้ลบก๊วนแทน หรือเพิ่มผู้ดูแลก่อน' : /only_club/.test(m) ? 'ต้องมีก๊วนอื่นอยู่ก่อน' : /name_mismatch/.test(m) ? 'ชื่อก๊วนไม่ตรง' : 'ทำไม่สำเร็จ: ' + m, null);
+      render(); return;
+    }
+    try { localStorage.removeItem(cacheKey()); } catch (e) { }
+    sync.dirty = false;
+    ui.clubs = (ui.clubs || []).filter(function (c) { return c.id !== gone.id; });
+    ui.busy = null;
+    await openClub(ui.clubs[0]);
+    ui.tab = 'play'; toast(okMsg, null); render();
+  }
+  function leaveClub() { return dropClub(function () { return DB.leaveClub(ui.club.id); }, 'ออกจากก๊วน ' + ui.club.name + ' แล้ว'); }
   async function switchClub(id) {
     var c = (ui.clubs || []).filter(function (x) { return x.id === id; })[0]; if (!c) return;
     ui.busy = 'กำลังสลับก๊วน…'; render();
@@ -252,7 +302,7 @@
     ui.club = { id: club.id, name: club.name };
     DB.setClub(club.id);
     try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (e) { }
-    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
+    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.allStats = null; ui.statId = null; ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
     sync.dirty = false;
     var cache = readCache();
     try {
@@ -286,7 +336,7 @@
     var msgs = [];
     if (name !== p.name) {
       ui.busy = 'กำลังบันทึกชื่อ…'; render();
-      try { await DB.updatePlayer(id, { name: name }); msgs.push('เปลี่ยนชื่อเป็น ' + name); p.name = name; }
+      try { if (!p.pending) await DB.updatePlayer(id, { name: name }); msgs.push('เปลี่ยนชื่อเป็น ' + name); p.name = name; }
       catch (err) { ui.busy = null; toast(err.code === '23505' ? 'มีชื่อนี้ในระบบแล้ว (อาจเป็นสมาชิกที่ถูกลบไป)' : 'เปลี่ยนชื่อไม่ได้: ' + errMsg(err), null); render(); return; }
       ui.busy = null;
     }
@@ -357,6 +407,103 @@
     if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
   }
 
+  /* ---------- LINE summary: plain text, no emojis, posted through the share sheet (or copied) ---------- */
+  function dayText(day) {
+    var rows = day.players.slice().sort(function (a, b) { return b.mmr - a.mmr; });
+    var lines = ['สรุป' + (ui.club ? ui.club.name : 'ก๊วน') + ' · ' + day.label, rows.length + ' คน · ' + day.count + ' แมตช์', '', 'อันดับ'];
+    rows.slice(0, 12).forEach(function (r, i) {
+      var d = r.mmr - r.start;
+      lines.push((i + 1) + '. ' + r.name + ' ' + r.mmr + ' (' + (d >= 0 ? '+' : '') + d + ') ' + A.BIRDS[A.birdIndex(r.mmr)].name + ' · ชนะ ' + r.win + '/' + r.played);
+    });
+    if (rows.length > 12) lines.push('และอีก ' + (rows.length - 12) + ' คน');
+    var ups = rows.filter(function (r) { return A.birdIndex(r.mmr) > A.birdIndex(r.start); });
+    if (ups.length) lines.push('', 'เลื่อนขั้น: ' + ups.map(function (r) { return r.name + ' เป็น' + A.BIRDS[A.birdIndex(r.mmr)].name; }).join(', '));
+    var best = rows.slice().sort(function (a, b) { return b.win - a.win || b.mmr - a.mmr; })[0];
+    if (best && best.win) lines.push('ชนะมากสุด: ' + best.name + ' ' + best.win + ' เกม');
+    var g = rows.map(function (r) { return r.played; });
+    if (g.length) {
+      var lo = Math.min.apply(null, g), hi = Math.max.apply(null, g);
+      lines.push('เล่นคนละ ' + lo + (lo === hi ? '' : '–' + hi) + ' เกม');
+    }
+    lines.push('', 'Budmintan');
+    return lines.join('\n');
+  }
+  async function shareText(text) {
+    if (navigator.share) {
+      try { await navigator.share({ text: text }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    try { await navigator.clipboard.writeText(text); toast('คัดลอกสรุปแล้ว เปิด LINE แล้ววางในกลุ่มได้เลย', null); }
+    catch (e) { ui.shareFallback = text; toast('คัดลอกอัตโนมัติไม่ได้ กดค้างที่ข้อความเพื่อคัดลอกเอง', null); render(); }
+  }
+
+  /* ---------- all-time stats for this club (loaded on demand) ---------- */
+  async function loadAllStats() {
+    if (ui.allLoading) return;
+    ui.allLoading = true;
+    try { ui.allStats = await DB.loadAllStats(); } catch (e) { ui.allStats = { error: errMsg(e) }; }
+    ui.allLoading = false;
+    if (ui.tab === 'sum') render();
+  }
+  function statsModel(data) {
+    var P = {};
+    var get = function (id) { return P[id] || (P[id] = { id: id, g: 0, w: 0, nights: {}, trail: [], part: {}, opp: {}, streak: 0, best: 0 }); };
+    data.matches.forEach(function (m) {
+      (m.match_players || []).forEach(function (mp) {
+        var r = get(mp.player_id), mine = m.team_a.indexOf(mp.player_id) >= 0 ? m.team_a : m.team_b, other = mine === m.team_a ? m.team_b : m.team_a;
+        r.g++;
+        if (mp.won) { r.w++; r.streak++; r.best = Math.max(r.best, r.streak); } else r.streak = 0;
+        r.nights[m.session_id] = 1;
+        if (mp.rating_after != null) r.trail.push(+mp.rating_after);
+        mine.forEach(function (x) { if (x !== mp.player_id) { var k = r.part[x] || (r.part[x] = { g: 0, w: 0 }); k.g++; if (mp.won) k.w++; } });
+        other.forEach(function (x) { var k = r.opp[x] || (r.opp[x] = { g: 0, l: 0 }); k.g++; if (!mp.won) k.l++; });
+      });
+    });
+    return P;
+  }
+  function spark(trail, w, h) {
+    if (trail.length < 2) return '<span class="spark"></span>';
+    var lo = Math.min.apply(null, trail), hi = Math.max.apply(null, trail), span = hi - lo || 1;
+    var pts = trail.map(function (v, i) { return (i / (trail.length - 1) * w).toFixed(1) + ',' + (h - 2 - (v - lo) / span * (h - 4)).toFixed(1); }).join(' ');
+    return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts + '"/></svg>';
+  }
+  function viewAllStats() {
+    if (!ui.allStats) { loadAllStats(); return '<div class="card span"><span class="muted">กำลังโหลดสถิติทุกคืน…</span></div>'; }
+    if (ui.allStats.error) return '<div class="card span"><p class="err">โหลดสถิติไม่ได้: ' + esc(ui.allStats.error) + '</p><button class="btn sm" data-act="stats-reload">ลองใหม่</button></div>';
+    var data = ui.allStats, P = statsModel(data), map = byId(), RT = A.ratings(S.done, S.players, S.adj);
+    var played = {}; data.matches.forEach(function (m) { played[m.session_id] = 1; });
+    var rows = Object.keys(P).map(function (k) { return P[k]; }).filter(function (r) { return map[r.id]; })
+      .sort(function (a, b) { return b.g - a.g || b.w - a.w; });
+    var h = '<div class="strip span"><div class="fact"><b>' + Object.keys(played).length + '</b><span>คืนที่มีการแข่ง</span></div><div class="fact"><b>' + data.matches.length + '</b><span>แมตช์ทั้งหมด</span></div><div class="fact"><b>' + rows.length + '</b><span>คนที่เคยลงสนาม</span></div></div>';
+    if (!rows.length) return h + '<div class="card span"><span class="muted">ยังไม่มีแมตช์ที่บันทึก</span></div>';
+    var nm = function (id) { return map[id] ? esc(map[id].name) : 'สมาชิกเก่า'; };
+    h += '<div class="card span"><h2>ทุกคืน</h2><p class="muted small">รวมคืนนี้ส่วนที่บันทึกขึ้นระบบแล้ว แตะชื่อเพื่อดูคู่หูและกราฟคะแนน</p><div class="alltable">';
+    rows.forEach(function (r) {
+      var open = ui.statId === r.id, mmr = Math.round(RT.R[r.id] != null ? RT.R[r.id] : (r.trail[r.trail.length - 1] || 1500));
+      h += '<button class="srow2' + (open ? ' on' : '') + '" data-act="stat-open" data-id="' + r.id + '" aria-expanded="' + open + '">' + bird(A.birdIndex(mmr), 'md') +
+        '<span class="who"><b>' + nm(r.id) + '</b><span>' + Object.keys(r.nights).length + ' คืน · ' + r.g + ' เกม · ชนะ ' + Math.round(r.w / r.g * 100) + '%</span></span>' +
+        spark(r.trail.slice(-30), 80, 26) + '<b class="mm">' + mmr + '</b></button>';
+      if (open) {
+        var pk = Object.keys(r.part).map(function (k) { return { id: +k, g: r.part[k].g, w: r.part[k].w }; }).filter(function (x) { return x.g >= 2; })
+          .sort(function (a, b) { return b.w / b.g - a.w / a.g || b.g - a.g; })[0];
+        var ok = Object.keys(r.opp).map(function (k) { return { id: +k, g: r.opp[k].g, l: r.opp[k].l }; }).filter(function (x) { return x.g >= 2; })
+          .sort(function (a, b) { return b.l / b.g - a.l / a.g || b.g - a.g; })[0];
+        h += '<div class="statdetail">' + (r.trail.length > 1 ? spark(r.trail, 300, 70) + '<span class="muted small">MMR ' + Math.round(Math.min.apply(null, r.trail)) + '–' + Math.round(Math.max.apply(null, r.trail)) + ' จาก ' + r.trail.length + ' เกม</span>' : '') +
+          '<div class="statfacts"><span><b>คู่หูมือขึ้น</b>' + (pk ? nm(pk.id) + ' ชนะด้วยกัน ' + pk.w + '/' + pk.g : 'ยังเล่นคู่ใครไม่ถึง 2 เกม') + '</span>' +
+          '<span><b>คู่ปรับ</b>' + (ok && ok.l ? nm(ok.id) + ' แพ้ให้ ' + ok.l + '/' + ok.g : 'ยังไม่มี') + '</span>' +
+          '<span><b>ชนะติดกันมากสุด</b>' + r.best + ' เกม</span></div></div>';
+      }
+    });
+    return h + '</div></div>';
+  }
+
+  /* <details> keep their open/closed state across re-renders (a confirm tap re-renders the page) */
+  function det(key, defOpen) { ui.det = ui.det || {}; var o = key in ui.det ? ui.det[key] : !!defOpen; return ' data-k="' + key + '"' + (o ? ' open' : ''); }
+  // only the admin's own taps are remembered (a default-open section fires toggle too, which must not stick)
+  document.addEventListener('click', function (e) {
+    var sm = e.target.closest && e.target.closest('summary'), d = sm && sm.parentElement;
+    if (d && d.dataset && d.dataset.k) { ui.det = ui.det || {}; ui.det[d.dataset.k] = !d.open; }
+  }, true);
+
   /* ---------- bird ranks ---------- */
   function bird(i, size) {
     var b = A.BIRDS[i] || A.BIRDS[0];
@@ -379,7 +526,7 @@
     var p = A.findP(S, id); if (!p || !LV_LABEL[lv]) return;
     p.level = lv; p.start = A.LV[lv];
     // saved straight away too, so it sticks even before tonight is opened
-    DB.updatePlayer(p.id, { level: p.level, start_mmr: p.start }).catch(function () { });
+    if (!p.pending) DB.updatePlayer(p.id, { level: p.level, start_mmr: p.start }).catch(function () { });
   }
 
   /* ---------- views ---------- */
@@ -411,7 +558,7 @@
     var stale = A.isStale(S, c), m = mins(c.at);
     head += '<span class="badge">' + (m ? 'เล่นมา ' + m + ' นาที' : 'เพิ่งเริ่ม') + '</span>';
     head += '<button class="redraw" data-act="redraw" data-ci="' + ci + '" aria-label="สุ่มสนาม ' + (ci + 1) + ' ใหม่ (ไม่นับแมตช์)">' + ic('shuffle') + 'สุ่มใหม่</button></div>';
-    var p = A.winProb(RT.R, c.t);
+    var p = A.winProb(RT, c.t);
     var h = '<section class="court">' + head;
     if (stale) h += '<div class="note">มีคนในสนามนี้ปิดสถานะเล่นแล้ว แตะชื่อเพื่อสลับกับคนในคิว หรือกดสุ่มใหม่</div>';
     h += '<div class="match' + (A.hasRes(c) ? ' picked' : '') + '">' + teamHtml(c, ci, 0, map, RT, st, p) + '<div class="vs" aria-hidden="true"><span>VS</span></div>' + teamHtml(c, ci, 1, map, RT, st, p) + '</div>';
@@ -501,7 +648,7 @@
   function memberRow(p, st, RT, on) {
     if (ui.editPlayer === p.id) return playerEditor(p, RT);
     var canDel = ui.editMembers && st.played[p.id] === 0 && !on[p.id];
-    return '<div class="row' + (p.active ? '' : ' off') + '">' + bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + '</b><span>' + (p.active ? 'เล่น ' + st.played[p.id] + ' · ' : '') + 'MMR ' + Math.round(RT.R[p.id]) + '</span></div>' +
+    return '<div class="row' + (p.active ? '' : ' off') + '">' + bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + '</b><span>' + (p.pending ? '<i class="provtxt">รอบันทึก</i> · ' : '') + (p.active ? 'เล่น ' + st.played[p.id] + ' · ' : '') + 'MMR ' + Math.round(RT.R[p.id]) + '</span></div>' +
       '<select class="lvl" data-act="level" data-id="' + p.id + '" aria-label="ระดับของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) { return '<option value="' + l + '"' + ((p.level || 'I') === l ? ' selected' : '') + '>' + LV_LABEL[l] + '</option>'; }).join('') + '</select>' +
       '<label class="sw"><input type="checkbox" data-act="toggle" data-id="' + p.id + '"' + (p.active ? ' checked' : '') + ' aria-label="มาวันนี้ ' + esc(p.name) + '"><span class="track"></span></label>' +
       (canDel ? '<button class="icon danger-ico" data-act="remove" data-id="' + p.id + '" aria-label="ลบ ' + esc(p.name) + ' ออกจากสมาชิก">' + ic('trash') + '</button>'
@@ -520,6 +667,16 @@
     var here = S.players.filter(function (p) { return p.active; }), away = S.players.filter(function (p) { return !p.active; });
     var fresh = (ui.newIds || []).map(function (id) { return A.findP(S, id); }).filter(Boolean);
     var h = '';
+    if ((ui.nameAsk || []).length) {
+      h += '<div class="card span askcard"><h2>ชื่อนี้ใช่คนเดิมไหม</h2><p class="muted small">ชื่อจากโพสต์สะกดคล้ายสมาชิกที่มีอยู่ ถ้าใช่ ระบบจะจำชื่อนี้ไว้ ครั้งหน้าเช็กอินให้เอง</p>';
+      ui.nameAsk.forEach(function (q, i) {
+        h += '<div class="askrow"><b>"' + esc(q.name) + '"</b><div class="askbtns">' + q.ids.map(function (id) {
+          var p = A.findP(S, id); if (!p) return '';
+          return '<button class="btn sm primary" data-act="ask-same" data-i="' + i + '" data-id="' + id + '">' + ic('check') + 'ใช่ ' + esc(p.name) + '</button>';
+        }).join('') + '<button class="btn sm" data-act="ask-new" data-i="' + i + '">' + ic('plus') + 'คนใหม่</button></div></div>';
+      });
+      h += '</div>';
+    }
     if (fresh.length) {
       h += '<div class="card span newcard"><div class="line"><h2>ตั้งระดับให้คนใหม่ (' + fresh.length + ')</h2><button class="btn sm primary" data-act="new-done">' + ic('check') + 'เสร็จ</button></div>' +
         '<p class="muted small">ระดับใช้ตั้งคะแนนเริ่มต้น หลังจากนั้นคะแนนขยับตามผลแข่ง</p>';
@@ -539,7 +696,7 @@
     if (!here.length) h += '<p class="muted small">ยังไม่มีใครเช็กอิน วางโพสต์ด้านบน หรือเปิดสวิตช์ในรายชื่อ "ยังไม่มา"</p>';
     here.forEach(function (p) { h += memberRow(p, st, RT, on); });
     h += '</div>';
-    h += '<div class="card"><details' + (here.length && !ui.editMembers ? '' : ' open') + '><summary>ยังไม่มา (' + away.length + ')' + ic('chev') + '</summary>';
+    h += '<div class="card"><details' + (ui.editMembers ? ' open' : det('away', !here.length)) + '><summary>ยังไม่มา (' + away.length + ')' + ic('chev') + '</summary>';
     if (away.length) h += '<div class="line" style="margin:6px 0"><span class="muted small">เปิดสวิตช์เมื่อมาถึง</span><button class="btn sm ghost" data-act="checkall">เช็กอินทุกคน</button></div>';
     else h += '<p class="muted small">มาครบทุกคน</p>';
     away.forEach(function (p) { h += memberRow(p, st, RT, on); });
@@ -571,7 +728,7 @@
         return;
       }
       h += '<div class="rk' + (i < 3 ? ' podium' : '') + '"><span class="pos">' + (i + 1) + '</span>' +
-        bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + (RT.C[p.id] < 10 ? '<span class="prov">ยังไม่นิ่ง</span>' : '') + '</b><span>' + A.BIRDS[RT.B[p.id]].name + ' · ชนะ ' + w + ' แพ้ ' + (g - w) + (p.active ? '' : ' · กลับแล้ว') + '</span></div>' +
+        bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + (!A.settled(RT, p.id) ? '<span class="prov">ยังไม่นิ่ง</span>' : '') + '</b><span>' + A.BIRDS[RT.B[p.id]].name + ' · ชนะ ' + w + ' แพ้ ' + (g - w) + (p.active ? '' : ' · กลับแล้ว') + '</span></div>' +
         '<div class="score"><b>' + rt + '</b>' + deltaHtml(rt - A.startOf(p)) + '</div>' +
         '<button class="icon" data-act="edit-mmr" data-id="' + p.id + '" aria-label="แก้ MMR ของ ' + esc(p.name) + '">' + ic('pencil') + '</button></div>';
     });
@@ -591,6 +748,11 @@
   }
   function modeTag(mode) { return mode && mode !== 'normal' ? ' <span class="tag m-' + mode + '">' + MODE_LABEL[mode] + '</span>' : ''; }
   function viewSummary() {
+    var head = '<div class="roundhead span"><h2>สรุป</h2>' + seg('ช่วงเวลา', [['night', 'คืนนี้'], ['all', 'ทุกคืน']], ui.sumAll ? 'all' : 'night', 'sumview', 'v') + '</div>';
+    if (ui.sumAll) return head + viewAllStats();
+    return head + viewNight();
+  }
+  function viewNight() {
     var st = A.stats(S.done, S.players), map = byId();
     var list = S.players.filter(function (p) { return p.active || st.played[p.id] > 0; });
     list.sort(function (a, b) { return st.played[b.id] - st.played[a.id] || a.id - b.id; });
@@ -598,7 +760,12 @@
     var max = counts.length ? Math.max.apply(null, counts) : 0, min = counts.length ? Math.min.apply(null, counts) : 0;
     var spread = max - min, pmax = 0;
     Object.keys(st.P).forEach(function (k) { if (st.P[k] > pmax) pmax = st.P[k]; });
-    var h = '<div class="strip span">' +
+    var h = '';
+    if (S.done.length) h += '<div class="card span sharecard"><div class="line"><div class="stext"><b>ส่งสรุปคืนนี้ไป LINE</b><span>อันดับ ใครเลื่อนขั้นนก และจำนวนเกมของแต่ละคน ให้คนในก๊วนดูได้โดยไม่ต้องเข้าแอป</span></div>' +
+      '<button class="btn primary" data-act="share-night">' + ic('share') + 'ส่งไป LINE</button></div>' +
+      '<details' + det('sharepv') + '><summary class="small">ดูข้อความก่อนส่ง' + ic('chev') + '</summary><pre class="sharetext">' + esc(dayText(A.daySnapshot(S, todayTitle()))) + '</pre></details></div>';
+    if (ui.shareFallback) h += '<div class="card span"><b>กดค้างเพื่อคัดลอก</b><textarea class="field" rows="8" readonly>' + esc(ui.shareFallback) + '</textarea></div>';
+    h += '<div class="strip span">' +
       '<div class="fact"><b>' + S.done.length + '</b><span>แมตช์ที่จบคืนนี้</span></div>' +
       '<div class="fact"><b>' + spread + '</b><span>คนเล่นมากสุดกับน้อยสุดต่างกัน (แมตช์)</span></div>' +
       '<div class="fact"><b>' + (pmax > 1 ? pmax : 0) + '</b><span>คู่หูเดิมซ้ำมากสุด (ครั้ง)</span></div></div>';
@@ -615,7 +782,7 @@
     h += '</div>';
     if (S.done.length) {
       var nm = function (id) { return map[id] ? esc(map[id].name) : '-'; };
-      h += '<div class="card"><details open><summary>แมตช์วันนี้ (แก้ไขได้)' + ic('chev') + '</summary><div class="hist">';
+      h += '<div class="card"><details' + det('today', true) + '><summary>แมตช์วันนี้ (แก้ไขได้)' + ic('chev') + '</summary><div class="hist">';
       for (var i = S.done.length - 1; i >= 0; i--) {
         var m = S.done[i];
         h += '<div class="hm"><span>แมตช์ ' + (i + 1) + ' · สนาม ' + ((m.court || 0) + 1) + modeTag(m.mode) + '</span><span>' + matchText(nm, m) + '</span>' +
@@ -627,12 +794,13 @@
       h += '<div class="card span"><h2>เกมที่จบแล้ว (' + S.days.length + ')</h2>';
       for (var di = S.days.length - 1; di >= 0; di--) {
         var d = S.days[di];
-        h += '<details><summary><span>' + esc(d.label) + ' · ' + d.count + ' แมตช์</span>' + ic('chev') + '</summary><div class="hist">';
+        h += '<details' + det('day' + di) + '><summary><span>' + esc(d.label) + ' · ' + d.count + ' แมตช์</span>' + ic('chev') + '</summary><div class="hist">' +
+          '<button class="btn sm" data-act="share-day" data-i="' + di + '" style="justify-self:start">' + ic('share') + 'ส่งสรุปคืนนี้ไป LINE</button>';
         d.players.forEach(function (r, ri) {
           h += '<div class="rk compact' + (ri < 3 ? ' podium' : '') + '"><span class="pos">' + (ri + 1) + '</span><div class="who"><b>' + esc(r.name) + '</b><span>เล่น ' + r.played + ' · ชนะ ' + r.win + ' · แพ้ ' + (r.played - r.win) + '</span></div><div class="score"><b>' + r.mmr + '</b>' + deltaHtml(r.mmr - r.start) + '</div></div>';
         });
         var en = function (s) { return esc(s); };
-        h += '<details><summary class="small">แมตช์ทั้งหมด' + ic('chev') + '</summary><div class="hist">';
+        h += '<details' + det('daym' + di) + '><summary class="small">แมตช์ทั้งหมด' + ic('chev') + '</summary><div class="hist">';
         for (var mi = d.matches.length - 1; mi >= 0; mi--) h += '<div class="hm"><span>แมตช์ ' + (mi + 1) + modeTag(d.matches[mi].mode) + '</span><span>' + matchText(en, d.matches[mi]) + '</span></div>';
         h += '</div></details></div></details>';
       }
@@ -668,29 +836,26 @@
     var account = '<div class="srow"><div class="stext"><b>' + esc(ui.user && ui.user.email || '') + '</b><span>เข้าสู่ระบบอยู่</span></div><button class="btn sm" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
       '<form id="pwForm" class="sblock add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn sm" type="submit">เปลี่ยนรหัสผ่าน</button></form>';
 
-    var sc = sheetCfg(), pending = sheetQueue().length;
     var data = '<div class="srow"><div class="stext"><b>ดาวน์โหลดข้อมูลทั้งหมด</b><span>ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์</span></div><button class="btn sm" data-act="export">' + ic('download') + 'ดาวน์โหลด</button></div>' +
-      '<details class="sdetails"><summary><span class="stext"><b>ความยืดหยุ่นของคิว</b><span>ตอนนี้ ' + (S.flex || 0) + ' · สนามแข่งขันและสังสรรค์</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+      '<details class="sdetails"' + det('flex') + '><summary><span class="stext"><b>ความยืดหยุ่นของคิว</b><span>ตอนนี้ ' + (S.flex || 0) + ' · สนามแข่งขันและสังสรรค์</span></span>' + ic('chev') + '</summary><div class="sbody">' +
       '<div class="line"><span class="muted small">เลือกจากคิวเพิ่มได้อีกกี่คน</span>' + seg('ความยืดหยุ่นของคิว', [[0, '0'], [2, '2'], [4, '4'], [6, '6']], S.flex || 0, 'flex', 'n') + '</div>' +
       '<p class="muted small">0 = ตามคิวเป๊ะ · ยิ่งมาก ระดับยิ่งใกล้ แต่บางคนอาจรอนานขึ้นนิดหน่อย คนที่เล่นน้อยกว่ายังได้ก่อนเสมอ</p></div></details>' +
-      '<details class="sdetails"><summary><span class="stext"><b>นำเข้าจากแอปเดิม</b><span>ใช้ข้อมูลจากปุ่ม "คัดลอกข้อมูลสำรอง"</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+      '<details class="sdetails"' + det('import') + '><summary><span class="stext"><b>นำเข้าจากแอปเดิม</b><span>ใช้ข้อมูลจากปุ่ม "คัดลอกข้อมูลสำรอง"</span></span>' + ic('chev') + '</summary><div class="sbody">' +
       '<p class="muted small">ระบบจับคู่ชื่อ เพิ่มคนที่ยังไม่มี และนำแมตช์เข้าเกมนี้ ทำได้เมื่อเกมนี้ยังไม่มีแมตช์</p>' +
-      '<form id="importForm" class="add" autocomplete="off"><textarea id="impText" rows="3" placeholder="วางข้อมูลสำรองที่นี่" aria-label="ข้อมูลสำรองจากแอปเดิม"></textarea><button class="btn sm" type="submit"' + (S.done.length ? ' disabled' : '') + '>นำเข้า</button></form></div></details>' +
-      '<details class="sdetails"' + (sc.url || pending ? ' open' : '') + '><summary><span class="stext"><b>รายงาน Google Sheet</b><span>ไม่บังคับ · ส่งสรุปตอนจบเกม</span></span>' + ic('chev') + '</summary><div class="sbody">' +
-      '<form id="sheetForm" class="add" autocomplete="off">' +
-      '<label class="small">ลิงก์ Web app<input class="field" id="sheetUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="' + esc(sc.url) + '"></label>' +
-      '<label class="small">รหัส (token) ต้องตรงกับในสคริปต์<input class="field" id="sheetToken" value="' + esc(sc.token) + '"></label>' +
-      '<div class="line"><button class="btn xs" type="button" data-act="gentoken">สร้างรหัสใหม่</button><button class="btn xs" type="button" data-act="copytoken">คัดลอกรหัส</button></div><button class="btn sm primary" type="submit">บันทึกและส่งทดสอบ</button></form>' +
-      (pending ? '<button class="btn sm" data-act="flushsheet">' + ic('cloud') + 'ส่งรายงานที่ค้าง (' + pending + ')</button>' : '') + '</div></details>';
-
+      '<form id="importForm" class="add" autocomplete="off"><textarea id="impText" rows="3" placeholder="วางข้อมูลสำรองที่นี่" aria-label="ข้อมูลสำรองจากแอปเดิม"></textarea><button class="btn sm" type="submit"' + (S.done.length ? ' disabled' : '') + '>นำเข้า</button></form></div></details>';
     var clubs = '<form id="clubForm" class="srow" autocomplete="off"><label class="stext"><b>ชื่อก๊วนนี้</b><input class="field" id="clubName" maxlength="60" value="' + esc(ui.club ? ui.club.name : '') + '" aria-label="ชื่อก๊วน" required></label><button class="btn sm" type="submit">บันทึกชื่อ</button></form>';
     (ui.clubs || []).forEach(function (c) {
       if (ui.club && c.id === ui.club.id) return;
       clubs += '<div class="srow"><div class="stext"><b>' + esc(c.name) + '</b><span>ก๊วนอื่นที่คุณดูแล</span></div><button class="btn sm" data-act="club-switch" data-id="' + c.id + '">' + ic('swap') + 'สลับไปก๊วนนี้</button></div>';
     });
-    clubs += '<details class="sdetails"' + (ui.newClubOpen ? ' open' : '') + '><summary><span class="stext"><b>สร้างก๊วนใหม่</b><span>ผู้เล่นและประวัติแยกจากก๊วนนี้ทั้งหมด</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+    clubs += '<details class="sdetails"' + det('newclub') + '><summary><span class="stext"><b>สร้างก๊วนใหม่</b><span>ผู้เล่นและประวัติแยกจากก๊วนนี้ทั้งหมด</span></span>' + ic('chev') + '</summary><div class="sbody">' +
       '<form id="newClubForm" class="add" autocomplete="off"><input class="field" id="newClubName" maxlength="60" placeholder="ชื่อก๊วน เช่น ก๊วนแบดวันเสาร์" aria-label="ชื่อก๊วนใหม่" required><button class="btn sm primary" type="submit">' + ic('plus') + 'สร้างและสลับไป</button></form>' +
       '<p class="muted small">คุณจะเป็นผู้ดูแลของก๊วนใหม่ แล้วเพิ่มบัญชีคนอื่นเป็นผู้ดูแลได้ที่หัวข้อผู้ดูแลก๊วน คนที่เป็นผู้ดูแลเฉพาะก๊วนนั้นจะไม่เห็นผู้เล่นของก๊วนนี้</p></div></details>';
+    var many = (ui.clubs || []).length > 1;
+    clubs += '<details class="sdetails"' + det('danger') + '><summary><span class="stext"><b>ออกจากก๊วน หรือลบก๊วน</b><span>' + (many ? 'ใช้กับก๊วนที่สร้างไว้ทดลอง' : 'ต้องมีก๊วนอื่นอยู่ก่อน จึงออกหรือลบก๊วนนี้ได้') + '</span></span>' + ic('chev') + '</summary><div class="sbody">' +
+      (many ? '<div class="line"><span class="muted small">ออกจากก๊วน: คุณจะไม่เห็นก๊วนนี้อีก ต้องมีผู้ดูแลคนอื่นเหลืออยู่</span><button class="btn sm' + (ui.confirm === 'leave' ? ' danger' : '') + '" data-act="club-leave">' + ic('logout') + (ui.confirm === 'leave' ? 'กดอีกครั้งเพื่อออก' : 'ออกจากก๊วน') + '</button></div>' +
+        '<form id="deleteClubForm" class="add" autocomplete="off"><label class="small">ลบก๊วนนี้ถาวร ทั้งผู้เล่น คืนเล่น และประวัติ พิมพ์ชื่อก๊วนเพื่อยืนยัน<input class="field" id="delClubName" placeholder="' + esc(ui.club ? ui.club.name : '') + '" aria-label="พิมพ์ชื่อก๊วนเพื่อยืนยันการลบ"></label><button class="btn sm danger" type="submit">' + ic('trash') + 'ลบก๊วนนี้</button></form>'
+        : '<p class="muted small">สร้างหรือสลับไปก๊วนอื่นก่อน แล้วค่อยกลับมาออกหรือลบก๊วนนี้</p>') + '</div></details>';
     return '<div class="scol">' + group('court', 'คืนนี้', tonight) + group('flag', 'จบคืน', end) + group('palette', 'หน้าตา', look) + '</div>' +
       '<div class="scol">' + group('users', 'ก๊วน', clubs) + group('shield', 'ผู้ดูแลก๊วน', adminsBody()) + group('gear', 'บัญชี', account) + group('sliders', 'ข้อมูลและขั้นสูง', data) + '</div>';
   }
@@ -764,29 +929,39 @@
     }
     p.active = on;
   }
-  async function checkIn(text) {
-    var names = A.parseNames(text), added = 0, checked = 0, failed = [];
-    if (!names.length) { toast('ไม่พบชื่อในข้อความ', null); return; }
-    var base = (S.done.length || A.liveIds(S).length) ? A.minCredit(S) : 0;
-    ui.busy = 'กำลังเช็กอิน…'; render();
-    for (var i = 0; i < names.length; i++) {
-      var n = names[i];
-      var ex = S.players.filter(function (p) { return p.name.toLowerCase() === n.toLowerCase(); })[0];
-      if (ex) { if (!ex.active) { setActive(ex.id, true); checked++; } continue; }
-      try {
-        var row = await DB.addPlayer(n, 'I');
-        S.players.push(fromRow(row, true, base)); added++;
-        ui.newIds = (ui.newIds || []).concat([row.id]);
-      } catch (e) {
-        if (e.code === '23505') {   // name exists but was removed earlier: bring them back
-          try {
-            var all = await DB.loadPlayers();
-            var r = all.filter(function (x) { return x.name.toLowerCase() === n.toLowerCase(); })[0];
-            if (r) { await DB.setPlayerActive(r.id, true); S.players.push(fromRow(r, true, base)); added++; continue; }
-          } catch (e2) { }
-        }
-        failed.push(n);
+  /* add one new member; offline it is kept locally with a temporary id and saved later */
+  async function addMember(n, base) {
+    try {
+      var row = await DB.addPlayer(n, 'I');
+      S.players.push(fromRow(row, true, base)); ui.newIds = (ui.newIds || []).concat([row.id]);
+      return 'added';
+    } catch (e) {
+      if (e.code === '23505') {   // name exists but was removed earlier: bring them back
+        try {
+          var r = (await DB.loadPlayers()).filter(function (x) { return x.name.toLowerCase() === n.toLowerCase(); })[0];
+          if (r) { await DB.setPlayerActive(r.id, true); S.players.push(fromRow(r, true, base)); return 'added'; }
+        } catch (e2) { }
       }
+      if (isOffline(e)) { var p = pendingPlayer(n, base); S.players.push(p); ui.newIds = (ui.newIds || []).concat([p.id]); return 'pending'; }
+      return 'failed';
+    }
+  }
+  function lateBase() { return (S.done.length || A.liveIds(S).length) ? A.minCredit(S) : 0; }
+  async function checkIn(text) {
+    var names = A.parseNames(text), added = 0, checked = 0, offline = 0, failed = [], asked = 0;
+    if (!names.length) { toast('ไม่พบชื่อในข้อความ', null); return; }
+    var base = lateBase();
+    ui.busy = 'กำลังเช็กอิน…'; render();
+    ui.nameAsk = ui.nameAsk || [];
+    for (var i = 0; i < names.length; i++) {
+      var n = names[i], m = A.matchName(n, S.players);
+      if (m.exact) { if (!m.exact.active) { setActive(m.exact.id, true); checked++; } continue; }
+      if (m.similar.length) {
+        if (!ui.nameAsk.some(function (x) { return x.name === n; })) { ui.nameAsk.push({ name: n, ids: m.similar.map(function (p) { return p.id; }) }); asked++; }
+        continue;
+      }
+      var res = await addMember(n, base);
+      if (res === 'added') added++; else if (res === 'pending') { added++; offline++; } else failed.push(n);
     }
     ui.busy = null;
     // the LINE post says how many courts were booked ("3 สนาม"); only change it before play starts
@@ -795,14 +970,33 @@
       A.setCourtCount(S, courts); courtMsg = ' · ตั้ง ' + courts + ' สนามตามโพสต์';
     }
     changed();
-    toast('เช็กอิน ' + checked + ' คน · เพิ่มใหม่ ' + added + ' คน' + courtMsg + (failed.length ? ' · เพิ่มไม่ได้: ' + failed.join(', ') + ' (ต้องออนไลน์)' : ''), null);
+    toast('เช็กอิน ' + checked + ' คน · เพิ่มใหม่ ' + added + ' คน' + courtMsg + (asked ? ' · มีชื่อคล้ายคนเดิม ' + asked + ' ชื่อ ช่วยยืนยันด้านบน' : '') +
+      (offline ? ' · ออฟไลน์อยู่ จะบันทึกคนใหม่เมื่อต่อเน็ต' : '') + (failed.length ? ' · เพิ่มไม่ได้: ' + failed.join(', ') : ''), null);
+    render();
+  }
+  /* answer for one "ใช่คนเดิมไหม" question: same person (remember the spelling) or a new member */
+  async function answerName(i, sameId) {
+    var q = (ui.nameAsk || [])[i]; if (!q) return;
+    ui.nameAsk.splice(i, 1);
+    if (sameId != null) {
+      var p = A.findP(S, sameId); if (!p) { render(); return; }
+      if (!p.active) setActive(p.id, true);
+      p.aliases = (p.aliases || []).concat([q.name]);
+      if (!p.pending) DB.updatePlayer(p.id, { aliases: p.aliases }).catch(function () { });
+      changed(); toast('เช็กอิน ' + p.name + ' แล้ว และจำชื่อ "' + q.name + '" ไว้ครั้งหน้า', null);
+    } else {
+      ui.busy = 'กำลังเพิ่ม…'; render();
+      var res = await addMember(q.name, lateBase());
+      ui.busy = null; changed();
+      toast(res === 'failed' ? 'เพิ่ม ' + q.name + ' ไม่ได้' : 'เพิ่ม ' + q.name + ' เป็นสมาชิกใหม่แล้ว' + (res === 'pending' ? ' (จะบันทึกเมื่อต่อเน็ต)' : ''), null);
+    }
     render();
   }
   async function removePlayer(id) {
     var st = A.stats(S.done, S.players);
     if (st.played[id] !== 0 || A.liveIds(S).indexOf(id) >= 0) return;
     var p = A.findP(S, id);
-    try { await DB.setPlayerActive(id, false); }
+    try { if (!(p && p.pending)) await DB.setPlayerActive(id, false); }
     catch (e) { toast('ลบไม่ได้ ต้องออนไลน์', null); return; }
     S.players = S.players.filter(function (q) { return q.id !== id; });
     changed(); toast('ลบ ' + (p ? p.name : '') + ' ออกจากสมาชิกแล้ว', null); render();
@@ -812,71 +1006,20 @@
     ui.busy = 'กำลังจบเกมและบันทึก…'; render();
     try {
       await flushSync();
-      var report = buildReport();
       await DB.closeSession(S.sessionId, A.carryForward(S));
       var snap = A.endGame(S, S.title || todayTitle());
       S.sessionId = null; S.title = null;              // next night opens at its first check-in
       S.players.forEach(function (p) { p.active = false; });
-      ui.undos = [];
+      ui.undos = []; ui.allStats = null;
       changed(); renderDate();
       try { S.days = await DB.loadClosedDays(30); } catch (e) { }
-      var msg = 'จบเกมแล้ว บันทึก ' + snap.count + ' แมตช์ขึ้นระบบ';
-      if (sheetCfg().url) {
-        saveQueue(sheetQueue().concat([report]));
-        ui.busy = 'กำลังส่งรายงานไป Google Sheet…'; render();
-        var sent = await flushReports();
-        msg += sent ? ' · ส่งรายงานไป Google Sheet แล้ว' : ' · ส่งรายงานไม่ได้ ไปที่ตั้งค่าเพื่อส่งอีกครั้ง';
-      }
-      toast(msg, null);
+      toast('จบเกมแล้ว บันทึก ' + snap.count + ' แมตช์ขึ้นระบบ · ส่งสรุปไป LINE ได้ที่แท็บสรุป', null);
     } catch (e) {
       toast('จบเกมไม่สำเร็จ: ' + errMsg(e) + ' ข้อมูลยังอยู่ ลองใหม่เมื่อออนไลน์', null);
     }
     ui.busy = null; render();
   }
 
-  /* ---------- Google Sheet report (Apps Script web app, see tools/google-sheet-report.gs) ---------- */
-  var SHEET_KEY = 'bmm-sheet', QUEUE_KEY = 'bmm-sheet-queue';
-  function sheetCfg() { try { return JSON.parse(localStorage.getItem(SHEET_KEY) || 'null') || { url: '', token: '' }; } catch (e) { return { url: '', token: '' }; } }
-  function saveSheetCfg(c) { try { localStorage.setItem(SHEET_KEY, JSON.stringify(c)); } catch (e) { } }
-  function sheetQueue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { return []; } }
-  function saveQueue(q) { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); } catch (e) { } }
-  function hhmm(ms) { if (!ms) return ''; try { return new Date(ms).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Bangkok' }); } catch (e) { return ''; } }
-  function buildReport() {
-    var RT = A.ratings(S.done, S.players, S.adj), map = byId();
-    var nm = function (id) { return map[id] ? map[id].name : '-'; };
-    return {
-      nightId: S.sessionId, date: todayISO(), label: S.title || todayTitle(), matchCount: S.done.length,
-      players: S.players.filter(function (p) { return RT.G[p.id] > 0; }).map(function (p) {
-        return { name: p.name, level: LV_LABEL[p.level || 'I'], played: RT.G[p.id], won: RT.W[p.id], lost: RT.G[p.id] - RT.W[p.id], mmrStart: Math.round(A.startOf(p)), mmrEnd: Math.round(RT.R[p.id]) };
-      }).sort(function (a, b) { return b.mmrEnd - a.mmrEnd; }),
-      matches: S.done.map(function (m, i) {
-        return { no: i + 1, court: (m.court || 0) + 1, mode: MODE_LABEL[m.mode || 'normal'], teamA: m.t[0].map(nm).join(' + '), teamB: m.t[1].map(nm).join(' + '), winner: m.w === 0 ? 'A' : 'B', start: hhmm(m.at), end: hhmm(m.end) };
-      }),
-      ranking: S.players.map(function (p) { return { name: p.name, level: LV_LABEL[p.level || 'I'], mmr: Math.round(RT.R[p.id]), career: RT.C[p.id] }; })
-        .sort(function (a, b) { return b.mmr - a.mmr; })
-    };
-  }
-  async function postReport(body, cfg) {
-    var res = await fetch(cfg.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ token: cfg.token }, body)) });
-    var out = await res.json();
-    if (!out || !out.ok) throw new Error((out && out.error) || 'Google Sheet ตอบกลับไม่สำเร็จ');
-    return out;
-  }
-  async function flushReports() {
-    var cfg = sheetCfg(), q = sheetQueue();
-    if (!cfg.url || !q.length) return 0;
-    var sent = 0, rest = [];
-    for (var i = 0; i < q.length; i++) {
-      try { await postReport(q[i], cfg); sent++; if (q[i].nightId) DB.markExported(q[i].nightId).catch(function () { }); }
-      catch (e) { rest.push(q[i]); }
-    }
-    saveQueue(rest);
-    return sent;
-  }
-  function randomToken() {
-    var a = new Uint8Array(18); crypto.getRandomValues(a);
-    return Array.prototype.map.call(a, function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-  }
   async function downloadAll() {
     ui.busy = 'กำลังเตรียมไฟล์…'; render();
     try {
@@ -952,18 +1095,6 @@
         toast('ย้อนกลับแล้ว: ' + step.label, null);
       } else ui.toast = null;
     }
-    else if (a === 'gentoken') { var ti = $('sheetToken'); if (ti) ti.value = randomToken(); return; }
-    else if (a === 'copytoken') {
-      var tv = ($('sheetToken') || {}).value || '';
-      if (!tv) { toast('ยังไม่มีรหัส กดสร้างรหัสใหม่ก่อน', null); return; }
-      navigator.clipboard.writeText(tv).then(function () { toast('คัดลอกรหัสแล้ว นำไปวางในสคริปต์ตรง TOKEN', null); }, function () { var el = $('sheetToken'); el.focus(); el.select(); toast('คัดลอกอัตโนมัติไม่ได้ เลือกข้อความแล้วคัดลอกเอง', null); });
-      return;
-    }
-    else if (a === 'flushsheet') {
-      ui.busy = 'กำลังส่งรายงาน…'; render();
-      flushReports().then(function (n) { ui.busy = null; toast(n ? 'ส่งรายงานแล้ว ' + n + ' คืน' : 'ยังส่งไม่ได้ ตรวจลิงก์ รหัส และอินเทอร์เน็ต', null); render(); });
-      return;
-    }
     else if (a === 'export') { downloadAll(); return; }
     else if (a === 'win') { var c = S.live[ci], s = +t.dataset.s; if (c) c.w = c.w === s ? null : s; }
     else if (a === 'save') {
@@ -1008,6 +1139,14 @@
     else if (a === 'edit-player') ui.editPlayer = +t.dataset.id;
     else if (a === 'setlevel') { setLevel(+t.dataset.id, t.dataset.lv); }
     else if (a === 'club-switch') { switchClub(+t.dataset.id); return; }
+    else if (a === 'club-leave') { if (confirmTap('leave')) { leaveClub(); return; } }
+    else if (a === 'ask-same') { answerName(+t.dataset.i, +t.dataset.id); return; }
+    else if (a === 'ask-new') { answerName(+t.dataset.i, null); return; }
+    else if (a === 'sumview') { ui.sumAll = t.dataset.v === 'all'; if (ui.sumAll) ui.allStats = null; }
+    else if (a === 'stats-reload') { ui.allStats = null; }
+    else if (a === 'stat-open') { ui.statId = ui.statId === +t.dataset.id ? null : +t.dataset.id; }
+    else if (a === 'share-night') { shareText(dayText(A.daySnapshot(S, todayTitle()))); return; }
+    else if (a === 'share-day') { var sd = S.days[+t.dataset.i]; if (sd) shareText(dayText(sd)); return; }
     else if (a === 'restpick') { ui.restPick = !ui.restPick; ui.sel = null; }
     else if (a === 'rest') { var rp = A.findP(S, +t.dataset.id); if (rp && A.toggleRest(S, rp.id)) msg = rp.rest ? rp.name + ' ขอพัก 1 ตา' : rp.name + ' กลับเข้าคิวแล้ว'; }
     else if (a === 'new-done') { ui.newIds = []; }
@@ -1072,16 +1211,6 @@
       try { await DB.updatePassword(np); $('newPw').value = ''; toast('เปลี่ยนรหัสผ่านแล้ว', null); }
       catch (err) { toast('เปลี่ยนรหัสผ่านไม่ได้: ' + errMsg(err), null); }
     }
-    else if (f.id === 'sheetForm') {
-      var cfg = { url: $('sheetUrl').value.trim(), token: $('sheetToken').value.trim() };
-      saveSheetCfg(cfg);
-      if (!cfg.url) { toast('ลบการตั้งค่า Google Sheet แล้ว', null); render(); return; }
-      if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(cfg.url)) { toast('ลิงก์ต้องขึ้นต้นด้วย https://script.google.com/', null); return; }
-      ui.busy = 'กำลังส่งทดสอบ…'; render();
-      try { await postReport({ test: true }, cfg); toast('เชื่อม Google Sheet สำเร็จ', null); }
-      catch (err) { toast('ส่งทดสอบไม่ผ่าน: ' + errMsg(err) + ' ตรวจลิงก์ รหัส และการ deploy แบบ Anyone', null); }
-      ui.busy = null; render();
-    }
     else if (f.id === 'playerForm') { await savePlayerEdit(f); }
     else if (f.id === 'clubForm') {
       var cn = $('clubName').value.replace(/\s+/g, ' ').trim();
@@ -1089,6 +1218,11 @@
       try { await DB.renameClub(ui.club.id, cn); ui.club.name = cn; (ui.clubs || []).forEach(function (c) { if (c.id === ui.club.id) c.name = cn; }); try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (x) { } toast('เปลี่ยนชื่อก๊วนแล้ว', null); }
       catch (err) { toast('เปลี่ยนชื่อก๊วนไม่ได้: ' + errMsg(err), null); }
       render();
+    }
+    else if (f.id === 'deleteClubForm') {
+      var typed = $('delClubName').value.replace(/\s+/g, ' ').trim();
+      if (!ui.club || typed !== ui.club.name) { toast('พิมพ์ชื่อก๊วนให้ตรงก่อน: ' + (ui.club ? ui.club.name : ''), null); return; }
+      await dropClub(function () { return DB.deleteClub(ui.club.id, typed); }, 'ลบก๊วน ' + typed + ' แล้ว');
     }
     else if (f.id === 'newClubForm') {
       var nn = $('newClubName').value.replace(/\s+/g, ' ').trim();

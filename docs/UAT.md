@@ -69,7 +69,6 @@ Tester: ______  Date: ______  Device: ______
 - [ ] The first empty court shows "ถัดไป" with 4 names; สุ่มลงสนามนี้ puts exactly those 4 on that court
 - [ ] The undo button in the header steps back several actions, even after the bottom message has gone
 - [ ] ลบแมตช์นี้ needs a second tap
-- [ ] Google Sheet: "บันทึกและส่งทดสอบ" says connected; after End day the sheet has the night, players, matches and ranking
 - [ ] Settings → ดาวน์โหลดข้อมูลทั้งหมด downloads a .json file
 - [ ] Settings → เปลี่ยนรหัสผ่าน works; sign out and in with the new password
 - [ ] Sign-in → ลืมรหัสผ่าน sends an email; its link opens the app and lets you set a new password
@@ -83,3 +82,12 @@ Issues found:
 | # | Step | What happened | Expected |
 |---|---|---|---|
 | | | | |
+
+## 11. Release 21 Oct
+- [ ] Paste a post with a near spelling (e.g. "นัท ซ้าย"): the Players tab asks "ใช่คนเดิมไหม"; ใช่ checks in the member and next time the same spelling checks in without asking; คนใหม่ adds a new member
+- [ ] Turn on airplane mode, check in a new name: it appears with "รอบันทึก"; turn the network back on: the tag disappears and the member is saved
+- [ ] Summary tab → ส่งไป LINE opens the share sheet (or copies); the text has the ranking, rank-ups and games per person
+- [ ] Summary tab → ทุกคืน lists members with nights, games, win %, MMR; tapping one shows the MMR graph, best partner and toughest opponent
+- [ ] Settings → ก๊วน → create a test club, then ออกจากก๊วน หรือลบก๊วน → delete it by typing its name; you are back in ก๊วนแบด
+- [ ] Ratings: a new player moves about ±30 per match, players with more games move less; "ยังไม่นิ่ง" shows for roughly the first 10 matches
+

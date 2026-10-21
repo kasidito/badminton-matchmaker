@@ -217,36 +217,32 @@ const viewText = page => page.textContent('#view');
   check('undo 4 goes back to empty courts', (await p4.$$('.match')).length === 0);
   check('undo stack is now empty', await p4.isDisabled('#undoBtn') || (await p4.getAttribute('#undoBtn', 'title')).includes('ย้อนกลับ'));
 
-  // Google Sheet report on End day (Apps Script faked with a route)
-  const sheetCalls = [];
-  await p4.route('https://script.google.com/**', async r => {
-    const body = JSON.parse(r.request().postData());
-    sheetCalls.push(body);
-    await r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(body.token === 'abc123' ? { ok: true } : { ok: false, error: 'bad token' }) });
-  });
-  await p4.click('#setBtn');
-  check('Google Sheet setup is tucked away when not used', !(await p4.isVisible('#sheetUrl')));
-  await p4.click('details:has(#sheetForm) > summary');
-  await p4.fill('#sheetUrl', 'https://script.google.com/macros/s/FAKE/exec');
-  await p4.fill('#sheetToken', 'wrong');
-  await p4.click('#sheetForm button[type=submit]');
-  await p4.waitForFunction(() => !document.querySelector('.busy'));
-  check('test ping with a wrong token reports the problem', (await p4.textContent('#toast')).includes('ไม่ผ่าน'));
-  await p4.fill('#sheetToken', 'abc123');
-  await p4.click('#sheetForm button[type=submit]');
-  await p4.waitForFunction(() => !document.querySelector('.busy'));
-  check('test ping with the right token succeeds', (await p4.textContent('#toast')).includes('สำเร็จ'));
+  // a night with one result: LINE summary, then End day stores MMR and uncertainty for next time
+  await p4.evaluate(() => { window.__shared = []; navigator.share = t => { window.__shared.push(t.text); return Promise.resolve(); }; });
   await p4.click('[data-tab=play]');
   await p4.click('.fill-inline');
   await p4.click('[data-act=win][data-ci="0"][data-s="1"]');
   await p4.click('[data-act=save][data-ci="0"]');
+  await p4.click('[data-tab=sum]');
+  await p4.click('[data-act=share-night]');
+  const shared = await p4.evaluate(() => window.__shared[0] || '');
+  check('LINE summary lists the ranking and games per person', shared.includes('อันดับ') && shared.includes('เล่นคนละ 1 เกม') && shared.includes('Budmintan'), shared.slice(0, 120));
+  check('LINE summary has no emoji', !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(shared));
   await p4.click('#setBtn');
   await p4.click('[data-act=end]'); await p4.click('[data-act=end]');
   await p4.waitForFunction(() => !document.querySelector('.busy'));
-  const rep = sheetCalls.find(c => c.nightId);
-  check('End day sends the night to Google Sheet', rep && rep.matchCount === 1 && rep.matches.length === 1 && rep.players.length === 4 && rep.ranking.length >= 13, JSON.stringify(rep && { m: rep.matchCount, p: rep.players.length }));
-  check('End day message confirms the report', (await p4.textContent('#toast')).includes('Google Sheet แล้ว'));
-  check('night is marked as exported', (await db(p4)).sessions.some(x => x.sheet_exported_at));
+  d = await db(p4);
+  check('End day stores each player\'s uncertainty for next time', d.players.filter(p => p.club_id === 1 && p.start_sigma != null).length >= 4);
+  await p4.click('[data-tab=sum]');
+  await p4.click('details:has([data-act=share-day]) > summary');
+  await p4.click('[data-act=share-day]');
+  check('a finished night can be shared too', (await p4.evaluate(() => window.__shared.length)) === 2);
+  await p4.click('[data-act=sumview][data-v=all]');
+  await p4.waitForSelector('.srow2');
+  check('all-nights stats list everyone who played', (await p4.$$('.srow2')).length >= 4);
+  await p4.click('.srow2');
+  check('opening a player shows partner and streak facts', (await p4.textContent('.statdetail')).includes('ชนะติดกันมากสุด'));
+  await p4.click('#setBtn');
 
   // download all data
   const [dl] = await Promise.all([p4.waitForEvent('download'), p4.click('[data-act=export]')]);
@@ -404,6 +400,69 @@ const viewText = page => page.textContent('#view');
   await p2.click('[data-tab=people]');
   const back = await p2.$$eval('.row .who b', els => els.map(e => e.textContent));
   check('the owner can switch back and the first club is intact', back.includes('ตั้ง') && !back.includes('เอ'), back.join(','));
+
+  /* ---------- check-in: near spellings are asked about, aliases are remembered ---------- */
+  await p2.fill('#nameIn', '1. นัท ซ้าย\n2. ป็อป');
+  await p2.click('#addForm button[type=submit]');
+  await p2.waitForSelector('.askcard');
+  check('near spellings are asked about instead of added', (await p2.$$('.askrow')).length === 2 && !(await db(p2)).players.some(p => p.name === 'นัท ซ้าย'));
+  await p2.click('.askrow:has-text("นัท ซ้าย") [data-act=ask-same]');
+  await p2.click('.askrow:has-text("ป็อป") [data-act=ask-new]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  d = await db(p2);
+  check('"ใช่" remembers the spelling on the member', (d.players.find(p => p.name === 'นัทซ้าย' && p.club_id === 1).aliases || []).includes('นัท ซ้าย'));
+  check('"คนใหม่" adds a separate member', d.players.some(p => p.name === 'ป็อป' && p.club_id === 1));
+  await p2.fill('#nameIn', 'นัท ซ้าย');
+  await p2.click('#addForm button[type=submit]');
+  await p2.waitForSelector('#toast:not([hidden])');
+  check('next time the remembered spelling checks in without asking', !(await p2.$('.askcard')));
+
+  /* ---------- adding a member while offline ---------- */
+  await p2.evaluate(() => { window.__fakeOffline = true; });
+  await p2.fill('#nameIn', 'คนออฟไลน์');
+  await p2.click('#addForm button[type=submit]');
+  await p2.waitForSelector('#toast:not([hidden])');
+  check('offline check-in keeps the new member locally', (await p2.textContent('#view')).includes('คนออฟไลน์') && (await p2.textContent('#view')).includes('รอบันทึก'));
+  await p2.evaluate(() => { window.__fakeOffline = false; });
+  await p2.click('#syncPill');
+  await p2.waitForSelector('#syncPill.saved', { timeout: 15000 });
+  d = await db(p2);
+  const off = d.players.find(p => p.name === 'คนออฟไลน์');
+  check('back online, the member is saved with a real id and joins tonight', off && off.id > 0 && d.session_players.some(x => x.player_id === off.id) && !d.session_players.some(x => x.player_id < 0));
+  check('the waiting tag is gone', !(await p2.textContent('#view')).includes('รอบันทึก'));
+
+  /* ---------- leave a club, delete a test club ---------- */
+  await p2.click('#setBtn');
+  await p2.click('[data-act=club-switch]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  await p2.click('#setBtn');
+  await p2.click('details.sdetails:has([data-act=club-leave]) > summary');
+  await p2.click('[data-act=club-leave]'); await p2.click('[data-act=club-leave]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  d = await db(p2);
+  check('leaving a club removes only this admin from it', !d.club_admins.some(x => x.club_id === 2 && x.user_id === 'u1') && d.club_admins.some(x => x.club_id === 2) && d.players.some(p => p.club_id === 2));
+  check('after leaving, the app is back on the remaining club', (await p2.textContent('#date')).includes('ก๊วนแบด'));
+  await p2.click('#setBtn');
+  await p2.click('details.sdetails:has(#newClubForm) > summary');
+  await p2.fill('#newClubName', 'ทดลอง');
+  await p2.click('#newClubForm button[type=submit]');
+  await p2.waitForSelector('#addForm');
+  await p2.fill('#nameIn', 'x1\nx2');
+  await p2.click('#addForm button[type=submit]');
+  await p2.waitForSelector('#toast:not([hidden])');
+  await p2.click('#setBtn');
+  await p2.click('details.sdetails:has(#deleteClubForm) > summary');
+  await p2.fill('#delClubName', 'ผิดชื่อ');
+  await p2.click('#deleteClubForm button[type=submit]');
+  check('deleting needs the exact club name', (await db(p2)).clubs.some(c => c.name === 'ทดลอง'));
+  await p2.fill('#delClubName', 'ทดลอง');
+  await p2.click('#deleteClubForm button[type=submit]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  d = await db(p2);
+  check('deleting a club removes it with its members', !d.clubs.some(c => c.name === 'ทดลอง') && !d.players.some(p => p.name === 'x1'));
+  await p2.click('#setBtn');
+  await p2.click('details.sdetails:has(.sbody p) > summary').catch(() => {});
+  check('the last club cannot be left or deleted', (await p2.$('[data-act=club-leave]')) === null && (await p2.$('#deleteClubForm')) === null);
 
   await p2.click('#setBtn');
   await p2.click('[data-act=theme][data-v=dark]');
