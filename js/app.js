@@ -303,7 +303,7 @@
     ui.club = { id: club.id, name: club.name };
     DB.setClub(club.id);
     try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (e) { }
-    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.allStats = null; ui.statId = null; ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
+    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.allStats = null; ui.statId = null; ui.month = null; ui.h2h = null; closeCard(); ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
     sync.dirty = false;
     var cache = readCache();
     try {
@@ -468,9 +468,14 @@
     var pts = trail.map(function (v, i) { return (i / (trail.length - 1) * w).toFixed(1) + ',' + (h - 2 - (v - lo) / span * (h - 4)).toFixed(1); }).join(' ');
     return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" preserveAspectRatio="none" aria-hidden="true"><polyline points="' + pts + '"/></svg>';
   }
-  function viewAllStats() {
-    if (!ui.allStats) { loadAllStats(); return '<div class="card span"><span class="muted">กำลังโหลดสถิติทุกคืน…</span></div>'; }
+  /* loading / error placeholder shared by the month and all-nights views; null when the data is in */
+  function statsGate() {
+    if (!ui.allStats) { loadAllStats(); return '<div class="card span"><span class="muted">กำลังโหลดสถิติ…</span></div>'; }
     if (ui.allStats.error) return '<div class="card span"><p class="err">โหลดสถิติไม่ได้: ' + esc(ui.allStats.error) + '</p><button class="btn sm" data-act="stats-reload">ลองใหม่</button></div>';
+    return null;
+  }
+  function viewAllStats() {
+    var gate = statsGate(); if (gate) return gate;
     var data = ui.allStats, P = statsModel(data), map = byId(), RT = A.ratings(S.done, S.players, S.adj);
     var played = {}; data.matches.forEach(function (m) { played[m.session_id] = 1; });
     var rows = Object.keys(P).map(function (k) { return P[k]; }).filter(function (r) { return map[r.id]; })
@@ -478,6 +483,7 @@
     var h = '<div class="strip span"><div class="fact"><b>' + Object.keys(played).length + '</b><span>คืนที่มีการแข่ง</span></div><div class="fact"><b>' + data.matches.length + '</b><span>แมตช์ทั้งหมด</span></div><div class="fact"><b>' + rows.length + '</b><span>คนที่เคยลงสนาม</span></div></div>';
     if (!rows.length) return h + '<div class="card span"><span class="muted">ยังไม่มีแมตช์ที่บันทึก</span></div>';
     var nm = function (id) { return map[id] ? esc(map[id].name) : 'สมาชิกเก่า'; };
+    h += h2hCard(data, rows.map(function (r) { return map[r.id]; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'th'); }));
     h += '<div class="card span"><h2>ทุกคืน</h2><p class="muted small">รวมคืนนี้ส่วนที่บันทึกขึ้นระบบแล้ว แตะชื่อเพื่อดูคู่หูและกราฟคะแนน</p><div class="alltable">';
     rows.forEach(function (r) {
       var open = ui.statId === r.id, mmr = Math.round(RT.R[r.id] != null ? RT.R[r.id] : (r.trail[r.trail.length - 1] || 1500));
@@ -492,7 +498,8 @@
         h += '<div class="statdetail">' + (r.trail.length > 1 ? spark(r.trail, 300, 70) + '<span class="muted small">MMR ' + Math.round(Math.min.apply(null, r.trail)) + '–' + Math.round(Math.max.apply(null, r.trail)) + ' จาก ' + r.trail.length + ' เกม</span>' : '') +
           '<div class="statfacts"><span><b>คู่หูมือขึ้น</b>' + (pk ? nm(pk.id) + ' ชนะด้วยกัน ' + pk.w + '/' + pk.g : 'ยังเล่นคู่ใครไม่ถึง 2 เกม') + '</span>' +
           '<span><b>คู่ปรับ</b>' + (ok && ok.l ? nm(ok.id) + ' แพ้ให้ ' + ok.l + '/' + ok.g : 'ยังไม่มี') + '</span>' +
-          '<span><b>ชนะติดกันมากสุด</b>' + r.best + ' เกม</span></div></div>';
+          '<span><b>ชนะติดกันมากสุด</b>' + r.best + ' เกม</span></div>' +
+          '<button class="btn sm" data-act="card" data-id="' + r.id + '">' + ic('share') + 'การ์ดยศของ ' + nm(r.id) + '</button></div>';
       }
     });
     return h + '</div></div>';
@@ -538,6 +545,175 @@
   }
 
   /* ---------- bird ranks ---------- */
+  /* ---------- month view: awards and a LINE recap ---------- */
+  function monthLabel(ym) { return thaiDate(new Date(+ym.slice(0, 4), +ym.slice(5, 7) - 1, 1), { month: 'long', year: 'numeric' }); }
+  function shortDay(d) { return d ? thaiDate(new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)), { day: 'numeric', month: 'short' }) : ''; }
+  function monthModel(ym) {
+    var map = byId();
+    var ms = A.monthStats(ui.allStats, ym, function (id) { return map[id] ? map[id].level || 'I' : 'I'; });
+    ms.rows = ms.rows.filter(function (r) { return map[r.id]; });     // removed members stay out of the boards
+    ms.rows.forEach(function (r) { r.name = map[r.id].name; });
+    ms.awards = A.monthAwards(ms);
+    return ms;
+  }
+  function monthText(ms) {
+    var aw = ms.awards, L = ['สรุปเดือน' + monthLabel(ms.ym) + ' · ' + (ui.club ? ui.club.name : 'ก๊วน'), ms.nights + ' คืน · ' + ms.matches + ' แมตช์ · ' + ms.rows.length + ' คน'];
+    if (aw.improved.length) {
+      L.push('', 'พัฒนาสูงสุด');
+      aw.improved.forEach(function (r, i) { L.push((i + 1) + '. ' + r.name + ' ' + fmtDelta(r.gain) + ' MMR (' + r.start + ' → ' + r.end + ')'); });
+    }
+    if (aw.busiest.length) L.push('', 'ขยันสุด: ' + aw.busiest[0].name + ' ' + aw.busiest[0].g + ' เกม ' + aw.busiest[0].nights + ' คืน');
+    if (aw.wins.length) L.push('ชนะมากสุด: ' + aw.wins[0].name + ' ' + aw.wins[0].w + ' เกม');
+    if (aw.rate.length) L.push('อัตราชนะสูงสุด: ' + aw.rate[0].name + ' ' + Math.round(aw.rate[0].w / aw.rate[0].g * 100) + '% (' + aw.rate[0].w + '/' + aw.rate[0].g + ')');
+    if (aw.streak.length) L.push('ชนะติดกันยาวสุด: ' + aw.streak[0].name + ' ' + aw.streak[0].best + ' เกม');
+    if (aw.promoted.length) L.push('', 'เลื่อนยศเดือนนี้: ' + aw.promoted.map(function (r) { return r.name + ' เป็น' + A.BIRDS[r.birdTo].name; }).join(', '));
+    L.push('', 'Budmintan');
+    return L.join('\n');
+  }
+  function awardCard(title, hint, list, val) {
+    var h = '<div class="card award"><div class="ahead"><h2>' + title + '</h2>' + (hint ? '<span class="muted small">' + hint + '</span>' : '') + '</div>';
+    if (!list.length) return h + '<span class="muted small">ยังไม่มีใครเข้าเกณฑ์</span></div>';
+    list.forEach(function (r, i) {
+      h += '<div class="arow' + (i === 0 ? ' first' : '') + '"><span class="pos">' + (i + 1) + '</span>' + bird(r.birdTo, 'md') + '<b class="nm">' + esc(r.name) + '</b><span class="val">' + val(r) + '</span></div>';
+    });
+    return h + '</div>';
+  }
+  function viewMonth() {
+    var gate = statsGate(); if (gate) return gate;
+    var months = A.monthsOf(ui.allStats);
+    if (!months.length) return '<div class="card span"><span class="muted">ยังไม่มีแมตช์ที่บันทึก</span></div>';
+    if (months.indexOf(ui.month) < 0) ui.month = months[0];
+    var i = months.indexOf(ui.month), ms = monthModel(ui.month), aw = ms.awards;
+    var h = '<div class="monthbar span"><button class="hbtn" data-act="month-step" data-d="1" aria-label="เดือนก่อนหน้า"' + (i >= months.length - 1 ? ' disabled' : '') + '><span class="rot-l">' + ic('chev') + '</span></button>' +
+      '<b>' + monthLabel(ui.month) + '</b><button class="hbtn" data-act="month-step" data-d="-1" aria-label="เดือนถัดไป"' + (i <= 0 ? ' disabled' : '') + '><span class="rot-r">' + ic('chev') + '</span></button></div>';
+    h += '<div class="strip span"><div class="fact"><b>' + ms.nights + '</b><span>คืนที่เล่น</span></div><div class="fact"><b>' + ms.matches + '</b><span>แมตช์</span></div><div class="fact"><b>' + ms.rows.length + '</b><span>คนที่ลงสนาม</span></div></div>';
+    h += '<div class="card span sharecard"><div class="line"><div class="stext"><b>ส่งสรุปเดือนนี้ไป LINE</b><span>คนพัฒนาสูงสุด ขยันสุด ชนะมากสุด และคนเลื่อนยศ</span></div>' +
+      '<button class="btn primary" data-act="share-month">' + ic('share') + 'ส่งไป LINE</button></div>' +
+      '<details' + det('monthpv') + '><summary class="small">ดูข้อความก่อนส่ง' + ic('chev') + '</summary><pre class="sharetext">' + esc(monthText(ms)) + '</pre></details></div>';
+    if (ui.shareFallback) h += '<div class="card span"><b>กดค้างเพื่อคัดลอก</b><textarea class="field" rows="8" readonly>' + esc(ui.shareFallback) + '</textarea></div>';
+    h += '<div class="awards span">' +
+      awardCard('พัฒนาสูงสุด', 'MMR ที่ขึ้นในเดือนนี้ เล่นอย่างน้อย 3 เกม', aw.improved, function (r) { return '<b class="up">' + fmtDelta(r.gain) + '</b><small>' + r.start + ' → ' + r.end + '</small>'; }) +
+      awardCard('ขยันสุด', 'เกมที่เล่นในเดือนนี้', aw.busiest, function (r) { return '<b>' + r.g + '</b><small>เกม · ' + r.nights + ' คืน</small>'; }) +
+      awardCard('ชนะมากสุด', '', aw.wins, function (r) { return '<b>' + r.w + '</b><small>จาก ' + r.g + ' เกม</small>'; }) +
+      awardCard('อัตราชนะสูงสุด', 'เล่นอย่างน้อย 5 เกม', aw.rate, function (r) { return '<b>' + Math.round(r.w / r.g * 100) + '%</b><small>' + r.w + '/' + r.g + '</small>'; }) +
+      awardCard('ชนะติดกันยาวสุด', '', aw.streak, function (r) { return '<b>' + r.best + '</b><small>เกมติด</small>'; }) +
+      '</div>';
+    if (aw.promoted.length) {
+      h += '<div class="card span"><h2>เลื่อนยศเดือนนี้</h2><div class="promos">' + aw.promoted.map(function (r) {
+        return '<div class="promo">' + bird(r.birdFrom, 'sm') + '<span class="arrow">' + '<span class="rot-r">' + ic('chev') + '</span></span>' + bird(r.birdTo, 'md') + '<span><b>' + esc(r.name) + '</b><small>' + A.BIRDS[r.birdTo].name + '</small></span></div>';
+      }).join('') + '</div></div>';
+    }
+    var rows = ms.rows.slice().sort(function (a, b) { return b.gain - a.gain || b.g - a.g; });
+    h += '<div class="card span"><h2>ทุกคนในเดือนนี้</h2><p class="muted small">เรียงตาม MMR ที่ได้ในเดือนนี้</p><div class="mtable">';
+    rows.forEach(function (r, k) {
+      h += '<div class="mrow"><span class="pos">' + (k + 1) + '</span>' + bird(r.birdTo, 'sm') + '<b class="nm">' + esc(r.name) + '</b><span class="muted small">' + r.g + ' เกม · ชนะ ' + Math.round(r.w / r.g * 100) + '%</span><b class="' + (r.gain > 0 ? 'up' : r.gain < 0 ? 'down' : '') + '">' + fmtDelta(r.gain) + '</b></div>';
+    });
+    return h + '</div></div>';
+  }
+
+  /* ---------- head-to-head: pick two members ---------- */
+  function h2hCard(data, members) {
+    ui.h2h = ui.h2h || [null, null];
+    var sel = function (i) {
+      return '<select class="field" data-act="h2h" data-i="' + i + '" aria-label="ผู้เล่นคนที่ ' + (i + 1) + '"><option value="">เลือกชื่อ</option>' + members.map(function (p) {
+        return '<option value="' + p.id + '"' + (ui.h2h[i] === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>';
+      }).join('') + '</select>';
+    };
+    var h = '<div class="card span h2h"><h2>เจอกัน</h2><p class="muted small">เลือกสองชื่อ ดูว่าเคยเจอกันกี่ครั้ง ใครชนะ และเป็นคู่กันแล้วรอดไหม</p><div class="h2hpick">' + sel(0) + '<span class="vs">VS</span>' + sel(1) + '</div>';
+    var a = ui.h2h[0], b = ui.h2h[1], map = byId();
+    if (a == null || b == null || a === b || !map[a] || !map[b]) return h + '</div>';
+    var r = A.headToHead(data, a, b), na = esc(map[a].name), nb = esc(map[b].name);
+    if (!r.vs.g && !r.with.g) return h + '<p class="muted">สองคนนี้ยังไม่เคยลงสนามเดียวกัน</p></div>';
+    h += '<div class="h2hres"><div class="side' + (r.vs.a > r.vs.b ? ' lead' : '') + '"><b>' + r.vs.a + '</b><span>' + na + '</span></div><div class="mid">ชนะกันเอง<br>' + r.vs.g + ' เกม</div><div class="side' + (r.vs.b > r.vs.a ? ' lead' : '') + '"><b>' + r.vs.b + '</b><span>' + nb + '</span></div></div>';
+    h += '<div class="statfacts"><span><b>เป็นคู่กัน</b>' + (r.with.g ? r.with.g + ' เกม ชนะ ' + r.with.w + ' (' + Math.round(r.with.w / r.with.g * 100) + '%)' : 'ยังไม่เคย') + '</span>' +
+      '<span><b>เจอกันล่าสุด</b>' + shortDay(r.lastDay) + '</span></div>';
+    return h + '</div>';
+  }
+
+  /* ---------- personal rank card: a PNG drawn on a canvas, shared to LINE ---------- */
+  // Fixed colours on purpose: the card is an exported picture and must look the same in light and dark mode.
+  var CARD = { bg: '#0b1f44', bg2: '#163370', ink: '#ffffff', muted: '#c7d2ea', hi: '#c6f432', onHi: '#0b1f44', line: 'rgba(255,255,255,.14)' };
+  function cardStats(id) {
+    var P = statsModel(ui.allStats), r = P[id], map = byId(), RT = A.ratings(S.done, S.players, S.adj);
+    if (!r || !map[id]) return null;
+    var mmr = Math.round(RT.R[id] != null ? RT.R[id] : (r.trail[r.trail.length - 1] || 1500)), bi = A.birdIndex(mmr);
+    var pk = Object.keys(r.part).map(function (k) { return { id: +k, g: r.part[k].g, w: r.part[k].w }; }).filter(function (x) { return x.g >= 2 && map[x.id]; })
+      .sort(function (a, b) { return b.w / b.g - a.w / a.g || b.g - a.g; })[0];
+    var next = A.BIRDS[bi + 1];
+    return { name: map[id].name, mmr: mmr, bird: bi, g: r.g, w: r.w, nights: Object.keys(r.nights).length, best: r.best,
+      partner: pk ? map[pk.id].name + ' ชนะด้วยกัน ' + pk.w + '/' + pk.g : null, next: next ? { name: next.name, need: next.min - mmr, from: bi === 0 ? next.min - 150 : A.BIRDS[bi].min, to: next.min } : null };
+  }
+  function birdImage(k) {
+    return new Promise(function (ok, bad) {
+      var sym = document.getElementById('b-' + k); if (!sym) { bad(new Error('no emblem')); return; }
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + sym.getAttribute('viewBox') + '" width="512" height="512">' + sym.innerHTML + '</svg>';
+      var img = new Image();
+      img.onload = function () { ok(img); }; img.onerror = function () { bad(new Error('emblem did not load')); };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+  }
+  async function makeCard(id) {
+    var c = cardStats(id); if (!c) return;
+    ui.busy = 'กำลังทำการ์ด…'; render();
+    try {
+      if (document.fonts && document.fonts.load) await Promise.all(['400', '600', '800'].map(function (w) { return document.fonts.load(w + ' 40px Prompt').catch(function () { }); }));
+      var W = 1080, H = 1350, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+      var g = cv.getContext('2d'), F = function (w, px) { return w + ' ' + px + 'px Prompt, "Noto Sans Thai", sans-serif'; };
+      var grad = g.createLinearGradient(0, 0, W, H); grad.addColorStop(0, CARD.bg2); grad.addColorStop(1, CARD.bg);
+      g.fillStyle = grad; g.fillRect(0, 0, W, H);
+      g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.fillStyle = CARD.muted; g.font = F(600, 34); g.fillText('Budmintan · ' + (ui.club ? ui.club.name : ''), W / 2, 92);
+      var em = await birdImage(A.BIRDS[c.bird].k);
+      g.drawImage(em, W / 2 - 230, 130, 460, 460);
+      g.fillStyle = CARD.ink; g.font = F(800, 96); g.fillText(c.name, W / 2, 700, W - 120);
+      var bn = A.BIRDS[c.bird].name; g.font = F(800, 44);
+      var bw = g.measureText(bn).width + 64;
+      g.fillStyle = CARD.hi; roundRect(g, W / 2 - bw / 2, 752, bw, 72, 36); g.fill();
+      g.fillStyle = CARD.onHi; g.fillText(bn, W / 2, 804);
+      g.fillStyle = CARD.ink; g.font = F(800, 120); g.fillText(String(c.mmr), W / 2, 960);
+      g.fillStyle = CARD.muted; g.font = F(600, 32); g.fillText('MMR', W / 2, 1002);
+      if (c.next) {                                    // progress to the next bird
+        var bx = 190, bwid = W - 380, p = Math.max(0, Math.min(1, (c.mmr - c.next.from) / (c.next.to - c.next.from)));
+        if (!isFinite(p)) p = 0;
+        g.fillStyle = CARD.line; roundRect(g, bx, 1032, bwid, 16, 8); g.fill();
+        g.fillStyle = CARD.hi; roundRect(g, bx, 1032, Math.max(16, bwid * p), 16, 8); g.fill();
+        g.fillStyle = CARD.muted; g.font = F(400, 28); g.fillText('อีก ' + Math.max(1, c.next.need) + ' MMR ถึง' + c.next.name, W / 2, 1090);
+      } else { g.fillStyle = CARD.hi; g.font = F(600, 30); g.fillText('ยศสูงสุดของก๊วน', W / 2, 1060); }
+      var facts = [[String(c.g), 'เกม'], [Math.round(c.w / Math.max(1, c.g) * 100) + '%', 'ชนะ'], [String(c.nights), 'คืน'], [String(c.best), 'ชนะติด']];
+      g.strokeStyle = CARD.line; g.lineWidth = 2; g.beginPath(); g.moveTo(90, 1128); g.lineTo(W - 90, 1128); g.stroke();
+      facts.forEach(function (f, i) {
+        var x = 90 + (W - 180) / 4 * (i + .5);
+        g.fillStyle = CARD.ink; g.font = F(800, 60); g.fillText(f[0], x, 1202);
+        g.fillStyle = CARD.muted; g.font = F(400, 28); g.fillText(f[1], x, 1242);
+      });
+      g.fillStyle = CARD.muted; g.font = F(400, 28);
+      g.fillText(c.partner ? 'คู่หูมือขึ้น: ' + c.partner : thaiDate(new Date(), { day: 'numeric', month: 'long', year: 'numeric' }), W / 2, 1306, W - 120);
+      var blob = await new Promise(function (ok) { cv.toBlob(ok, 'image/png'); });
+      closeCard();
+      ui.card = { url: URL.createObjectURL(blob), blob: blob, name: c.name };
+    } catch (e) { toast('ทำการ์ดไม่ได้: ' + errMsg(e), null); }
+    ui.busy = null; render();
+  }
+  function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  function closeCard() { if (ui.card && ui.card.url) { try { URL.revokeObjectURL(ui.card.url); } catch (e) { } } ui.card = null; }
+  function cardFileName() { return 'budmintan-' + (ui.card ? ui.card.name : 'card').replace(/[^\w฀-๿-]+/g, '') + '.png'; }
+  async function shareCard() {
+    if (!ui.card) return;
+    var file = new File([ui.card.blob], cardFileName(), { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+    }
+    toast('ส่งต่อจากแอปไม่ได้ กดค้างที่รูปเพื่อบันทึก หรือกดดาวน์โหลด', null);
+  }
+  function cardModal() {
+    return '<div class="modal" role="dialog" aria-modal="true" aria-label="การ์ดยศของ ' + esc(ui.card.name) + '"><div class="modalbox">' +
+      '<img class="cardimg" src="' + ui.card.url + '" alt="การ์ดยศของ ' + esc(ui.card.name) + '">' +
+      '<p class="muted small">กดส่งต่อเพื่อเลือก LINE หรือกดค้างที่รูปเพื่อบันทึก</p>' +
+      '<div class="acts"><button class="btn primary" data-act="card-share">' + ic('share') + 'ส่งต่อ</button>' +
+      '<a class="btn" href="' + ui.card.url + '" download="' + esc(cardFileName()) + '">' + ic('download') + 'ดาวน์โหลด</a>' +
+      '<button class="btn" data-act="card-close">' + ic('x') + 'ปิด</button></div></div></div>';
+  }
+
   function bird(i, size) {
     var b = A.BIRDS[i] || A.BIRDS[0];
     return '<span class="bird bd-' + b.k + (size ? ' ' + size : '') + '" role="img" aria-label="' + b.name + '" title="' + b.name + '"><svg aria-hidden="true"><use href="#b-' + b.k + '"/></svg></span>';
@@ -787,8 +963,11 @@
   }
   function modeTag(mode) { return mode && mode !== 'normal' ? ' <span class="tag m-' + mode + '">' + MODE_LABEL[mode] + '</span>' : ''; }
   function viewSummary() {
-    var head = '<div class="roundhead span"><h2>สรุป</h2>' + seg('ช่วงเวลา', [['night', 'คืนนี้'], ['all', 'ทุกคืน']], ui.sumAll ? 'all' : 'night', 'sumview', 'v') + '</div>';
-    if (ui.sumAll) return head + viewAllStats();
+    var v = ui.sumView || 'night';
+    var head = '<div class="roundhead span"><h2>สรุป</h2>' + seg('ช่วงเวลา', [['night', 'คืนนี้'], ['month', 'รายเดือน'], ['all', 'ทุกคืน']], v, 'sumview', 'v') + '</div>';
+    var modal = ui.card ? cardModal() : '';
+    if (v === 'all') return head + viewAllStats() + modal;
+    if (v === 'month') return head + viewMonth() + modal;
     return head + viewNight();
   }
   function viewNight() {
@@ -1196,7 +1375,12 @@
     else if (a === 'club-leave') { if (confirmTap('leave')) { leaveClub(); return; } }
     else if (a === 'ask-same') { answerName(+t.dataset.i, +t.dataset.id); return; }
     else if (a === 'ask-new') { answerName(+t.dataset.i, null); return; }
-    else if (a === 'sumview') { ui.sumAll = t.dataset.v === 'all'; if (ui.sumAll) ui.allStats = null; }
+    else if (a === 'sumview') { ui.sumView = t.dataset.v; if (ui.sumView !== 'night') ui.allStats = null; }
+    else if (a === 'month-step') { var mo = ui.allStats && !ui.allStats.error ? A.monthsOf(ui.allStats) : []; var mi = mo.indexOf(ui.month) + (+t.dataset.d); if (mo[mi]) ui.month = mo[mi]; }
+    else if (a === 'share-month') { shareText(monthText(monthModel(ui.month))); return; }
+    else if (a === 'card') { makeCard(+t.dataset.id); return; }
+    else if (a === 'card-share') { shareCard(); return; }
+    else if (a === 'card-close') { closeCard(); }
     else if (a === 'stats-reload') { ui.allStats = null; }
     else if (a === 'stat-open') { ui.statId = ui.statId === +t.dataset.id ? null : +t.dataset.id; }
     else if (a === 'share-night') { shareText(dayText(A.daySnapshot(S, todayTitle()))); return; }
@@ -1235,6 +1419,7 @@
       setLevel(+t.dataset.id, t.value);
     }
     else if (a === 'boardsw') S.board = t.checked;
+    else if (a === 'h2h') { ui.h2h = ui.h2h || [null, null]; ui.h2h[+t.dataset.i] = t.value ? +t.value : null; render(); return; }
     else if (a === 'score') {
       var sc = S.live[+t.dataset.ci]; if (!sc) return;
       var v = t.value === '' ? null : Math.max(0, Math.min(99, parseInt(t.value, 10)));

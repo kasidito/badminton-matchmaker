@@ -256,6 +256,27 @@ const viewText = page => page.textContent('#view');
   check('all-nights stats list everyone who played', (await p4.$$('.srow2')).length >= 4);
   await p4.click('.srow2');
   check('opening a player shows partner and streak facts', (await p4.textContent('.statdetail')).includes('ชนะติดกันมากสุด'));
+  await p4.click('.statdetail [data-act=card]');
+  await p4.waitForSelector('.modal .cardimg');
+  const cardSize = await p4.$eval('.modal .cardimg', im => im.complete ? [im.naturalWidth, im.naturalHeight] : [0, 0]);
+  check('rank card is drawn as a 1080x1350 picture', cardSize[0] === 1080 && cardSize[1] === 1350, JSON.stringify(cardSize));
+  check('rank card can be downloaded', (await p4.getAttribute('.modal a[download]', 'download')).endsWith('.png'));
+  check('rank card screen fits on a phone', await noSideScroll(p4));
+  await p4.click('[data-act=card-close]');
+  check('closing the card removes it', !(await p4.$('.modal')));
+  const h2hIds = await p4.$$eval('select[data-act=h2h][data-i="0"] option', os => os.map(o => o.value).filter(Boolean));
+  await p4.selectOption('select[data-act=h2h][data-i="0"]', h2hIds[0]);
+  await p4.selectOption('select[data-act=h2h][data-i="1"]', h2hIds[1]);
+  const h2hText = await p4.textContent('.h2h');
+  check('head-to-head shows a result for two picked members', /ชนะกันเอง|ยังไม่เคยลงสนามเดียวกัน/.test(h2hText) && /เป็นคู่กัน|ยังไม่เคยลงสนาม/.test(h2hText), h2hText.slice(0, 160));
+  await p4.click('[data-act=sumview][data-v=month]');
+  await p4.waitForSelector('.award');
+  check('month view shows the five award boards', (await p4.$$('.award')).length === 5 && (await p4.textContent('.monthbar')).length > 3);
+  check('month view lists everyone who played this month', (await p4.$$('.mrow')).length >= 4);
+  check('month view fits on a phone', await noSideScroll(p4));
+  await p4.click('[data-act=share-month]');
+  const monthShared = await p4.evaluate(() => window.__shared[window.__shared.length - 1] || '');
+  check('month recap for LINE has the boards and no emoji', monthShared.startsWith('สรุปเดือน') && monthShared.includes('ขยันสุด') && !/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(monthShared), monthShared.slice(0, 160));
   await p4.click('#setBtn');
 
   // download all data

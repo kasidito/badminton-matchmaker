@@ -247,3 +247,43 @@ test('index.html stamps every local css/js link with the same ?v= (no stale mix 
   const vs = new Set(links.map(l => (l.match(/\?v=(\w+)"/) || [])[1]));
   assert.ok(links.length >= 5 && vs.size === 1 && !vs.has(undefined), links.join(' '));
 });
+
+/* ---------- club history ---------- */
+function hist() {
+  // 1 Sep: 1+2 beat 3+4.  1 Oct: 1+3 beat 2+4, then 2+3 beat 1+4, then 1+2 beat 3+4 (rating numbers made up but consistent)
+  const mp = (id, won, before, after) => ({ player_id: id, won, rating_before: before, rating_after: after });
+  return {
+    sessions: [{ id: 1, played_on: '2026-09-01' }, { id: 2, played_on: '2026-10-01' }, { id: 3, played_on: '2026-10-08' }],
+    matches: [
+      { session_id: 1, seq: 1, team_a: [1, 2], team_b: [3, 4], winner: 0, match_players: [mp(1, true, 1500, 1530), mp(2, true, 1500, 1530), mp(3, false, 1500, 1470), mp(4, false, 1500, 1470)] },
+      { session_id: 2, seq: 1, team_a: [1, 3], team_b: [2, 4], winner: 0, match_players: [mp(1, true, 1530, 1560), mp(3, true, 1470, 1500), mp(2, false, 1530, 1500), mp(4, false, 1470, 1440)] },
+      { session_id: 2, seq: 2, team_a: [2, 3], team_b: [1, 4], winner: 0, match_players: [mp(2, true, 1500, 1530), mp(3, true, 1500, 1530), mp(1, false, 1560, 1530), mp(4, false, 1440, 1410)] },
+      { session_id: 3, seq: 1, team_a: [1, 2], team_b: [3, 4], winner: 0, match_players: [mp(1, true, 1530, 1560), mp(2, true, 1530, 1560), mp(3, false, 1530, 1500), mp(4, false, 1410, 1380)] },
+      { session_id: 3, seq: 2, team_a: [1, 2], team_b: [3, 4], winner: null, match_players: [] }
+    ]
+  };
+}
+test('months with matches, newest first', () => {
+  assert.deepStrictEqual(A.monthsOf(hist()), ['2026-10', '2026-09']);
+});
+test('month stats count only that month and measure MMR change inside it', () => {
+  const ms = A.monthStats(hist(), '2026-10', () => 'I');
+  assert.strictEqual(ms.nights, 2);
+  assert.strictEqual(ms.matches, 3);
+  const r = id => ms.rows.find(x => x.id === id);
+  assert.deepStrictEqual([r(1).g, r(1).w, r(1).start, r(1).end, r(1).gain, r(1).nights], [3, 2, 1530, 1560, 30, 2]);
+  assert.deepStrictEqual([r(4).g, r(4).w, r(4).gain], [3, 0, -90]);
+  assert.strictEqual(r(2).best, 2);
+  const aw = A.monthAwards(ms);
+  assert.deepStrictEqual(aw.improved.map(x => [x.id, x.gain]), [[1, 30], [2, 30], [3, 30]]);
+  assert.strictEqual(aw.busiest.length, 3);
+  assert.strictEqual(aw.rate.length, 0, 'nobody has 5 games, so no win-rate board');
+  assert.ok(aw.promoted.every(x => x.birdTo > x.birdFrom));
+});
+test('head-to-head counts games as partners and as opponents', () => {
+  const h = A.headToHead(hist(), 1, 2);
+  assert.deepStrictEqual(h.with, { g: 2, w: 2 });
+  assert.deepStrictEqual(h.vs, { g: 2, a: 1, b: 1 });
+  assert.strictEqual(h.lastDay, '2026-10-08');
+  assert.deepStrictEqual(A.headToHead(hist(), 1, 1).vs, { g: 0, a: 0, b: 0 });
+});

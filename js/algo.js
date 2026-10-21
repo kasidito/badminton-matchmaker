@@ -389,6 +389,75 @@
       .filter(function (s) { return s && /[A-Za-z฀-๿À-ɏ぀-ヿ一-鿿]/.test(s); });
   }
 
+  /* ---------- club history: months, monthly awards, head-to-head (data from DB.loadAllStats) ---------- */
+  // data = { sessions: [{id, played_on}], matches: [{session_id, seq, team_a, team_b, winner, match_players: [{player_id, won, rating_before, rating_after}]}] }
+  function historyMatches(data) {
+    var day = {};
+    (data.sessions || []).forEach(function (s) { day[s.id] = String(s.played_on || ''); });
+    return (data.matches || []).filter(function (m) { return m.winner === 0 || m.winner === 1; })
+      .map(function (m) { return { m: m, day: day[m.session_id] || '' }; })
+      .sort(function (x, y) { return x.day < y.day ? -1 : x.day > y.day ? 1 : (x.m.session_id - y.m.session_id) || (x.m.seq - y.m.seq); });
+  }
+  /* 'YYYY-MM' of every month with at least one finished match, newest first */
+  function monthsOf(data) {
+    var seen = {};
+    historyMatches(data).forEach(function (x) { if (x.day) seen[x.day.slice(0, 7)] = 1; });
+    return Object.keys(seen).sort().reverse();
+  }
+  /* one month: per member games, wins, MMR change (first rating_before in the month -> last rating_after), longest win streak,
+     nights, and bird at the start and end. levelOf(id) gives the start level for members with no earlier rating. */
+  function monthStats(data, ym, levelOf) {
+    var P = {}, nights = {}, count = 0;
+    var row = function (id) { return P[id] || (P[id] = { id: id, g: 0, w: 0, start: null, end: null, prev: null, streak: 0, best: 0, nights: {} }); };
+    historyMatches(data).forEach(function (x) {
+      var mon = x.day.slice(0, 7);
+      if (mon > ym) return;
+      if (mon === ym) { count++; nights[x.m.session_id] = 1; }
+      (x.m.match_players || []).forEach(function (mp) {
+        var r = row(mp.player_id);
+        if (mon < ym) { if (mp.rating_after != null) r.prev = +mp.rating_after; return; }
+        if (r.start == null) r.start = mp.rating_before != null ? +mp.rating_before : r.prev;
+        if (mp.rating_after != null) r.end = +mp.rating_after;
+        r.g++; r.nights[x.m.session_id] = 1;
+        if (mp.won) { r.w++; r.streak++; if (r.streak > r.best) r.best = r.streak; } else r.streak = 0;
+      });
+    });
+    var rows = Object.keys(P).map(function (k) { return P[k]; }).filter(function (r) { return r.g > 0; }).map(function (r) {
+      var start = r.start != null ? r.start : (LV[levelOf ? levelOf(r.id) : 'I'] || 1500);
+      var end = r.end != null ? r.end : start;
+      return { id: r.id, g: r.g, w: r.w, best: r.best, nights: Object.keys(r.nights).length,
+        start: Math.round(start), end: Math.round(end), gain: Math.round(end - start), birdFrom: birdIndex(start), birdTo: birdIndex(end) };
+    });
+    return { ym: ym, nights: Object.keys(nights).length, matches: count, rows: rows };
+  }
+  /* awards for a month; minimums keep one lucky game off the boards */
+  function monthAwards(ms) {
+    var R = ms.rows.slice();
+    var top = function (list, n) { return list.slice(0, n); };
+    return {
+      improved: top(R.filter(function (r) { return r.g >= 3 && r.gain > 0; }).sort(function (a, b) { return b.gain - a.gain || b.g - a.g; }), 3),
+      busiest: top(R.slice().sort(function (a, b) { return b.g - a.g || b.w - a.w; }), 3),
+      wins: top(R.filter(function (r) { return r.w > 0; }).sort(function (a, b) { return b.w - a.w || a.g - b.g; }), 3),
+      rate: top(R.filter(function (r) { return r.g >= 5; }).sort(function (a, b) { return b.w / b.g - a.w / a.g || b.g - a.g; }), 3),
+      streak: top(R.filter(function (r) { return r.best >= 2; }).sort(function (a, b) { return b.best - a.best || b.w - a.w; }), 1),
+      promoted: R.filter(function (r) { return r.birdTo > r.birdFrom; }).sort(function (a, b) { return b.birdTo - a.birdTo || b.gain - a.gain; })
+    };
+  }
+  /* two members across every saved match: as partners and as opponents */
+  function headToHead(data, a, b) {
+    var out = { with: { g: 0, w: 0 }, vs: { g: 0, a: 0, b: 0 }, lastDay: null };
+    if (a == null || b == null || a === b) return out;
+    historyMatches(data).forEach(function (x) {
+      var m = x.m, ta = m.team_a || [], tb = m.team_b || [];
+      var sa = ta.indexOf(a) >= 0 ? 0 : tb.indexOf(a) >= 0 ? 1 : -1, sb = ta.indexOf(b) >= 0 ? 0 : tb.indexOf(b) >= 0 ? 1 : -1;
+      if (sa < 0 || sb < 0) return;
+      out.lastDay = x.day;
+      if (sa === sb) { out.with.g++; if (m.winner === sa) out.with.w++; }
+      else { out.vs.g++; if (m.winner === sa) out.vs.a++; else out.vs.b++; }
+    });
+    return out;
+  }
+
   /* A numbered sign-up post ("1. ชิน", "2. โฟล์ค") is the full list for the night. */
   function isRoster(text) {
     return String(text).split(/\r?\n/).filter(function (l) { return /^\s*\d+\s*[.)]/.test(l); }).length >= 2;
@@ -408,7 +477,7 @@
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,
     setCourtCount: setCourtCount, minCredit: minCredit, daySnapshot: daySnapshot, carryForward: carryForward,
-    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts, isRoster: isRoster
+    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts, isRoster: isRoster, monthsOf: monthsOf, monthStats: monthStats, monthAwards: monthAwards, headToHead: headToHead
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Algo;
   else root.Algo = Algo;

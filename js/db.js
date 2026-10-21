@@ -80,7 +80,7 @@
       var sess = must(await c.from('sessions').select('id,played_on,status').eq('club_id', club).order('id'));
       var ids = sess.map(function (s) { return s.id; });
       if (!ids.length) return { sessions: [], matches: [] };
-      var ms = must(await c.from('matches').select('id,session_id,seq,team_a,team_b,winner,ended_at,match_players(player_id,won,rating_after)')
+      var ms = must(await c.from('matches').select('id,session_id,seq,team_a,team_b,winner,ended_at,match_players(player_id,won,rating_before,rating_after)')
         .in('session_id', ids).order('session_id').order('seq'));
       return { sessions: sess, matches: ms };
     },
