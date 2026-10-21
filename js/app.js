@@ -577,7 +577,7 @@
     var h = '<div class="card award"><div class="ahead"><h2>' + title + '</h2>' + (hint ? '<span class="muted small">' + hint + '</span>' : '') + '</div>';
     if (!list.length) return h + '<span class="muted small">ยังไม่มีใครเข้าเกณฑ์</span></div>';
     list.forEach(function (r, i) {
-      h += '<div class="arow' + (i === 0 ? ' first' : '') + '"><span class="pos">' + (i + 1) + '</span>' + bird(r.birdTo, 'md') + '<b class="nm">' + esc(r.name) + '</b><span class="val">' + val(r) + '</span></div>';
+      h += '<div class="awrow' + (i === 0 ? ' first' : '') + '"><span class="pos">' + (i + 1) + '</span>' + bird(r.birdTo, 'md') + '<b class="nm">' + esc(r.name) + '</b><span class="val">' + val(r) + '</span></div>';
     });
     return h + '</div>';
   }

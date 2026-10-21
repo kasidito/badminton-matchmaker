@@ -313,6 +313,8 @@ body.board .cname{font-size:1.4rem}
 .arow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line)}
 .arow:first-child{border-top:0}
 .arow .acts{display:flex;gap:6px}
+.arow .who{flex:1 1 200px;min-width:0}
+.arow .who b{overflow-wrap:anywhere}
 .arow + .mmr-edit{margin-bottom:8px}
 
 /* bird rank emblems */
@@ -444,14 +446,14 @@ body.board .scin{display:none}
 .award{align-content:start}
 .award .ahead{display:grid;gap:2px}
 .award .ahead h2{margin:0}
-.arow{display:grid;grid-template-columns:1.6em 34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
-.arow .pos{font-weight:700;color:var(--muted);text-align:center}
-.arow.first .pos{background:var(--hi);color:var(--on-hi);border-radius:50%;width:1.6em;height:1.6em;display:grid;place-items:center;font-size:.85rem}
-.arow .nm,.mrow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.arow .val{display:grid;justify-items:end;line-height:1.15}
-.arow .val b{font:800 1.15rem/1.1 var(--font-display);font-variant-numeric:tabular-nums}
-.arow .val small{color:var(--muted);font-size:.75rem}
-b.up,.arow .val b.up{color:var(--up)}
+.awrow{display:grid;grid-template-columns:1.6em 34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--line)}
+.awrow .pos{font-weight:700;color:var(--muted);text-align:center}
+.awrow.first .pos{background:var(--hi);color:var(--on-hi);border-radius:50%;width:1.6em;height:1.6em;display:grid;place-items:center;font-size:.85rem}
+.awrow .nm,.mrow .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.awrow .val{display:grid;justify-items:end;line-height:1.15}
+.awrow .val b{font:800 1.15rem/1.1 var(--font-display);font-variant-numeric:tabular-nums}
+.awrow .val small{color:var(--muted);font-size:.75rem}
+b.up,.awrow .val b.up{color:var(--up)}
 b.down{color:var(--down)}
 .promos{display:flex;flex-wrap:wrap;gap:10px}
 .promo{display:flex;align-items:center;gap:8px;background:var(--field);border:1px solid var(--card-line);border-radius:16px;padding:8px 12px}
