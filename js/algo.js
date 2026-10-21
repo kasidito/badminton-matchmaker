@@ -56,7 +56,7 @@
       var m = done[i], ids = m.t[0].concat(m.t[1]), ok = true;
       ids.forEach(function (id) { if (!(id in R)) ok = false; });
       if (!ok || !hasRes(m)) { if (trail) trail[i] = null; continue; }
-      var mult = MODE_W[m.mode || 'normal'] || 1;
+      var mult = (MODE_W[m.mode || 'normal'] || 1) * marginFactor(m.sc);
       var before = {};
       ids.forEach(function (id) { before[id] = R[id]; Sg[id] = Math.sqrt(Sg[id] * Sg[id] + TAU * TAU); });
       var T = m.t.map(function (t) { return { mu: R[t[0]] + R[t[1]], s2: Sg[t[0]] * Sg[t[0]] + Sg[t[1]] * Sg[t[1]] }; });
@@ -80,6 +80,9 @@
     applyAdj(done.length);
     return { R: R, Sg: Sg, G: G, W: W, C: C, B: B };
   }
+  /* optional score (e.g. [21, 15]): a close game moves ratings less, a big win more (0.75 at 0 points apart, 1.25 at 15+) */
+  function validScore(sc) { return !!sc && sc.length === 2 && sc.every(function (x) { return typeof x === 'number' && isFinite(x) && x >= 0 && x <= 99; }) && sc[0] !== sc[1]; }
+  function marginFactor(sc) { return validScore(sc) ? 0.75 + 0.5 * Math.min(Math.abs(sc[0] - sc[1]), 15) / 15 : 1; }
   function settled(RT, id) { return RT.Sg[id] < SETTLED; }
   /* chance team 0 wins, from the same model (needs RT from ratings for the sigmas) */
   function winProb(RT, t) {
@@ -103,19 +106,63 @@
       return { id: p.id, credit: (p.base || 0) + st.played[p.id], since: p.freeSince || 0, r: p.qr != null ? p.qr : (rnd ? rnd() : p.id) };
     }).sort(function (a, b) { return a.credit - b.credit || a.since - b.since || a.r - b.r; });
   }
-  function teamCost(t, mode, P, O, A, RM) {
-    function pc(a, b) { var k = keyOf(a, b); return 3 * (2 * (P[k] || 0) + 1) + (A[k] ? 12 : 0); }
+  /* pair rules (T.rules from the club): kind 'with' = always partners when both are here tonight,
+     'apart' = never on the same court. A rule whose players are not both checked in is ignored. */
+  function activeRules(T) {
+    var here = {}; T.players.forEach(function (p) { if (p.active) here[p.id] = 1; });
+    return (T.rules || []).filter(function (r) { return r.a !== r.b && here[r.a] && here[r.b]; });
+  }
+  function ruleMaps(T) {
+    var W = {}, X = {}, mate = {};
+    activeRules(T).forEach(function (r) {
+      if (r.kind === 'with') { W[keyOf(r.a, r.b)] = 1; mate[r.a] = r.b; mate[r.b] = r.a; } else X[keyOf(r.a, r.b)] = 1;
+    });
+    return { W: W, X: X, mate: mate };
+  }
+  /* the queue as draws use it: a 'with' pair stands together at the place of the first of the two,
+     and someone whose partner is still on court (or resting) waits for them (held) */
+  function lineup(T, rnd) {
+    var q = queueOrder(T, rnd), M = ruleMaps(T), inQ = {}, placed = {}, list = [], held = [];
+    q.forEach(function (x) { inQ[x.id] = x; });
+    q.forEach(function (x) {
+      if (placed[x.id]) return;
+      var m = M.mate[x.id];
+      if (m != null && !inQ[m]) { held.push(x.id); return; }
+      list.push(x); placed[x.id] = 1;
+      if (m != null && !placed[m]) { list.push(inQ[m]); placed[m] = 1; x.pair = inQ[m].pair = x.id; }
+    });
+    return { list: list, held: held, maps: M };
+  }
+  /* take people in line order up to n without splitting a pair; on a single court also skip anyone who must not meet someone already taken */
+  function takeUnits(list, n, X, oneCourt) {
+    var out = [], i = 0;
+    while (i < list.length && out.length < n) {
+      var unit = list[i].pair != null && list[i + 1] && list[i + 1].pair === list[i].pair ? [list[i], list[i + 1]] : [list[i]];
+      i += unit.length;
+      if (out.length + unit.length > n) continue;
+      if (oneCourt && unit.some(function (u) { return out.some(function (o) { return X[keyOf(u.id, o.id)]; }); })) continue;
+      out = out.concat(unit);
+    }
+    return out;
+  }
+  /* the 4 people the next single-court draw will take (shown as "ถัดไป") */
+  function nextFour(T) {
+    var L = lineup(T, null), four = takeUnits(L.list, 4, L.maps.X, true);
+    return four.length === 4 ? four.map(function (x) { return x.id; }) : [];
+  }
+  function teamCost(t, mode, P, O, A, RM, W) {
+    function pc(a, b) { var k = keyOf(a, b); return 3 * (2 * (P[k] || 0) + 1) + (A[k] ? 12 : 0) - (W && W[k] ? 1000 : 0); }
     function oc(a, b) { return 2 * (O[keyOf(a, b)] || 0) + 1; }
     var t1 = t[0], t2 = t[1];
     var k = pc(t1[0], t1[1]) + pc(t2[0], t2[1]) + oc(t1[0], t2[0]) + oc(t1[0], t2[1]) + oc(t1[1], t2[0]) + oc(t1[1], t2[1]);
     var d = Math.abs(RM[t1[0]] + RM[t1[1]] - RM[t2[0]] - RM[t2[1]]);
     return k + d / (mode === 'normal' ? 30 : 15);
   }
-  function bestSplit(f, mode, P, O, A, RM, rnd) {
+  function bestSplit(f, mode, P, O, A, RM, rnd, W) {
     var a = f[0], b = f[1], c = f[2], e = f[3];
     var opts = shuffle([[[a, b], [c, e]], [[a, c], [b, e]], [[a, e], [b, c]]], rnd);
     var bo = null, bc = Infinity;
-    opts.forEach(function (o) { var k = teamCost(o, mode, P, O, A, RM); if (k < bc) { bc = k; bo = o; } });
+    opts.forEach(function (o) { var k = teamCost(o, mode, P, O, A, RM, W); if (k < bc) { bc = k; bo = o; } });
     var r = f.map(function (id) { return RM[id]; });
     var sp = Math.max.apply(null, r) - Math.min.apply(null, r);
     if (mode === 'competitive') bc += sp / 5;
@@ -128,15 +175,18 @@
     var ex = {}; (exclude || []).forEach(function (id) { ex[id] = 1; });
     var st = stats(T.done, T.players);
     var RM = ratings(T.done, T.players, T.adj).R;
-    var ranked = queueOrder(T, rnd).filter(function (x) { return !ex[x.id]; });
+    var L = lineup(T, rnd), M = L.maps;
+    var ranked = L.list.filter(function (x) { return !ex[x.id]; });
     var k = Math.min(slots.length, Math.floor(ranked.length / 4));
+    while (k > 0 && takeUnits(ranked, k * 4, M.X, k === 1).length < k * 4) k--;   // pairs or apart rules can leave a court short
     if (k < 1) return [];
     var use = slots.slice(0, k);
     var modes = use.map(function (ci) { return (T.courts[ci] || {}).mode || 'normal'; });
     var N = k * 4;
     var special = modes.some(function (m) { return m !== 'normal'; });
     var flex = special ? Math.max(0, Math.min(T.flex || 0, ranked.length - N)) : 0;
-    var cand = ranked.slice(0, N + flex);
+    var cand = takeUnits(ranked, N + flex, M.X, k === 1 && !flex);
+    if (cand.length < N + flex) { flex = Math.max(0, cand.length - N); }
     var A = {};
     (avoid || []).forEach(function (t) { A[keyOf(t[0][0], t[0][1])] = 1; A[keyOf(t[1][0], t[1][1])] = 1; });
     var tries = (k === 1 && !flex) ? 1 : 600;
@@ -157,6 +207,7 @@
         if (x.credit + 1 < maxC) cost += 1000;   // never leave someone 2+ matches behind for a better mix
       });
       var ids = chosen.map(function (x) { return x.id; });
+      Object.keys(M.mate).forEach(function (a) { if (inSet[a] && !inSet[M.mate[a]]) cost += 5000; });   // never split a pair across sit-out
       var order;
       if (special && k > 1 && rnd() < 0.5) {
         order = ids.map(function (id) { return { id: id, k: RM[id] + (rnd() - 0.5) * 60 }; })
@@ -166,9 +217,18 @@
       } else order = shuffle(ids, rnd);
       var courts = [];
       for (var c2 = 0; c2 < k; c2++) {
-        var r = bestSplit(order.slice(c2 * 4, c2 * 4 + 4), modes[c2], st.P, st.O, A, RM, rnd);
+        var r = bestSplit(order.slice(c2 * 4, c2 * 4 + 4), modes[c2], st.P, st.O, A, RM, rnd, M.W);
         cost += r.cost; courts.push(r.t);
       }
+      courts.forEach(function (ct) {
+        var all = ct[0].concat(ct[1]);
+        all.forEach(function (a, i) { all.slice(i + 1).forEach(function (b) { if (M.X[keyOf(a, b)]) cost += 5000; }); });
+        Object.keys(M.mate).forEach(function (a) {
+          a = +a; if (all.indexOf(a) < 0) return;
+          var mine = ct[0].indexOf(a) >= 0 ? ct[0] : ct[1];
+          if (mine.indexOf(M.mate[a]) < 0) cost += 5000;   // pair must be partners on the same court
+        });
+      });
       if (cost < bestCost) { bestCost = cost; best = courts; }
     }
     return use.map(function (ci, i) { return { ci: ci, t: best[i] }; });
@@ -215,7 +275,9 @@
     var c = T.live[ci];
     if (!hasRes(c) || isStale(T, c)) return false;
     var ts = Date.now();
-    T.done.push({ t: c.t, w: c.w, mode: (T.courts[ci] || {}).mode || 'normal', court: ci, at: c.at || ts, end: ts });
+    var m = { t: c.t, w: c.w, mode: (T.courts[ci] || {}).mode || 'normal', court: ci, at: c.at || ts, end: ts };
+    if (validScore(c.sc) && (c.sc[0] > c.sc[1] ? 0 : 1) === c.w) m.sc = c.sc.slice();
+    T.done.push(m);
     c.t[0].concat(c.t[1]).forEach(function (id) { var p = findP(T, id); if (p) { p.freeSince = ts; p.qr = Math.random(); } });
     T.live[ci] = null;
     return true;
@@ -224,7 +286,7 @@
   function swapPos(T, a, b) {
     if (a.id != null && b.id != null) return false;
     function get(x) { return x.id != null ? x.id : T.live[x.ci].t[x.s][x.i]; }
-    function set(x, id) { T.live[x.ci].t[x.s][x.i] = id; T.live[x.ci].w = null; }
+    function set(x, id) { T.live[x.ci].t[x.s][x.i] = id; T.live[x.ci].w = null; T.live[x.ci].sc = null; }
     var ia = get(a), ib = get(b);
     if (ia === ib) return false;
     [a, b].forEach(function (x) { if (x.id != null) { var q = findP(T, x.id); if (q) q.rest = false; } });   // picked by hand: no longer resting
@@ -336,7 +398,7 @@
   }
 
   var Algo = {
-    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP, toggleRest: toggleRest, remapId: remapId, matchName: matchName, nameKey: nameKey,
+    LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP, toggleRest: toggleRest, validScore: validScore, marginFactor: marginFactor, lineup: lineup, nextFour: nextFour, remapId: remapId, matchName: matchName, nameKey: nameKey,
     stats: stats, ratings: ratings, winProb: winProb, settled: settled, SIG0: SIG0, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,

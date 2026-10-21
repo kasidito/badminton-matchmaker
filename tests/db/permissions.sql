@@ -2,7 +2,7 @@ do $$
 declare
   owner uuid := 'f47ae5db-c3e3-41e3-a70a-5db90453da8c';
   b uuid := gen_random_uuid(); c uuid := gen_random_uuid();
-  cid bigint; pid bigint; sid bigint; s1 bigint; n int; r text := '';
+  cid bigint; pid bigint; pid2 bigint; r2 text; sid bigint; s1 bigint; n int; r text := '';
 begin
   insert into auth.users (id, email) values (b, 'b@x'), (c, 'c@x');
   insert into public.sessions (club_id, title) values (1, 'club1 night') returning id into s1;
@@ -25,6 +25,7 @@ begin
   begin insert into public.players (club_id, name) values (1, 'intruder'); r := r || ', B insert into club1=ALLOWED(BAD)';
   exception when others then r := r || ', B insert into club1=blocked'; end;
   insert into public.players (club_id, name) values (cid, 'ชิน') returning id into pid; r := r || ', B adds own ชิน=ok';
+  insert into public.players (club_id, name) values (cid, 'คู่') returning id into pid2;
   insert into public.sessions (club_id, title) values (cid, 't') returning id into sid; r := r || ', B opens night=ok';
   insert into public.session_players (session_id, player_id) values (sid, pid); r := r || ', own player into night=ok';
   begin insert into public.session_players (session_id, player_id) values (sid, 1); r := r || ', B adds club1 player to own night=ALLOWED(BAD)';
@@ -39,6 +40,15 @@ begin
   perform public.sync_session(sid, '{"v":4}'::jsonb, array['normal','social'], 2,
     jsonb_build_array(jsonb_build_object('id', pid, 'level','I','start_mmr',1500,'career_games',0,'in_session',true,'active',true,'base',0)), '[]'::jsonb, '[]'::jsonb);
   r := r || ', B sync own night=ok';
+  insert into public.players (club_id, name) values (cid, 'p3'), (cid, 'p4');
+  perform public.sync_session(sid, '{"v":4}'::jsonb, array['normal'], 0, '[]'::jsonb,
+    jsonb_build_array(jsonb_build_object('seq',1,'court',0,'mode','normal','a',jsonb_build_array(pid,pid2),'b',jsonb_build_array((select id from public.players where name='p3' and club_id=cid),(select id from public.players where name='p4' and club_id=cid)),'w',0,'sc',jsonb_build_array(21,15),'players','[]'::jsonb)), '[]'::jsonb);
+  select score_a || '-' || score_b into r2 from public.matches where session_id = sid; r := r || ', score stored=' || r2;
+  insert into public.pair_rules (club_id, a, b, kind) values (cid, pid, pid2, 'with'); r := r || ', B adds own pair rule=ok';
+  begin insert into public.pair_rules (club_id, a, b, kind) values (cid, pid, 1, 'apart'); r := r || ', rule with club1 player=ALLOWED(BAD)';
+  exception when others then r := r || ', rule with club1 player=blocked'; end;
+  begin insert into public.pair_rules (club_id, a, b, kind) values (1, 1, 2, 'apart'); r := r || ', B adds rule to club1=ALLOWED(BAD)';
+  exception when others then r := r || ', B adds rule to club1=blocked'; end;
   begin insert into public.club_admins (club_id, user_id) values (cid, c); r := r || ', B self-manages club_admins=ALLOWED(BAD)';
   exception when others then r := r || ', B inserts club_admins directly=blocked'; end;
   perform public.create_club('B second club'); r := r || ', B create_club=ok';

@@ -196,3 +196,44 @@ test('remapId moves a player everywhere in the night', () => {
   assert.ok(A.findP(T, 99) && !A.findP(T, id));
 });
 
+test('pair rules: a "with" pair is drawn together as partners, "apart" never share a court', () => {
+  for (let run = 0; run < 40; run++) {
+    const T = session(12, ['normal', 'normal'], 0);
+    T.rules = [{ a: 1, b: 7, kind: 'with' }, { a: 2, b: 3, kind: 'apart' }];
+    A.fillEmpty(T, Math.random);
+    T.live.filter(Boolean).forEach(c => {
+      const all = c.t[0].concat(c.t[1]);
+      assert.ok(!(all.includes(2) && all.includes(3)), 'apart pair on one court');
+      if (all.includes(1) || all.includes(7)) assert.ok(c.t.some(t => t.includes(1) && t.includes(7)), 'with pair not partners');
+    });
+  }
+});
+
+test('pair rules: someone waits for a partner who is still on court; single-court draws respect both rules', () => {
+  const T = session(10, ['normal', 'normal'], 0);
+  T.rules = [{ a: 1, b: 2, kind: 'with' }, { a: 3, b: 4, kind: 'apart' }];
+  T.live[0] = { t: [[1, 5], [6, 8]], w: null, at: 1 };       // 1 is playing (rule broken by hand), 2 is free
+  T.players.forEach(p => { p.qr = Math.random(); });           // the app gives everyone a tie-break number
+  const L = A.lineup(T, null);
+  assert.deepStrictEqual(L.held, [2], '2 waits for 1');
+  const four = A.nextFour(T);
+  assert.strictEqual(four.length, 4);
+  assert.ok(!four.includes(2) && !(four.includes(3) && four.includes(4)), JSON.stringify(four));
+  A.drawCourt(T, 1, Math.random);
+  const c = T.live[1].t[0].concat(T.live[1].t[1]);
+  assert.deepStrictEqual(c.slice().sort(), four.slice().sort(), 'the hint matches the draw');
+  T.players.find(p => p.id === 1).active = false;            // partner went home: rule is ignored
+  assert.deepStrictEqual(A.lineup(T, null).held, []);
+});
+
+test('optional score: close games move ratings less, big wins more; a score that disagrees with the winner is dropped', () => {
+  const mk = sc => A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'normal', sc }], session(4, ['normal'], 0).players, []).R[1] - 1500;
+  const plain = mk(undefined), close = mk([21, 19]), big = mk([21, 5]);
+  assert.ok(close < plain && plain < big, [close, plain, big].join(' '));
+  assert.ok(Math.abs(close / plain - (0.75 + 0.5 * 2 / 15)) < 1e-9);
+  const T = session(4, ['normal'], 0);
+  T.live[0] = { t: [[1, 2], [3, 4]], w: 1, sc: [21, 15], at: 1 };
+  A.saveResult(T, 0);
+  assert.strictEqual(T.done[0].sc, undefined);
+});
+

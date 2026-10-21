@@ -69,6 +69,15 @@ Project `badminton-matchmaker` (Singapore, `vhvlhuimelqsnglhayxs`).
 
 Row level security limits every row to the admins of its club (`club_admins`); a signed-in user who runs no club sees nothing. The key in `js/config.js` is the publishable key, which is meant to be public. Never commit the `service_role` key.
 
+### Email (forgot password)
+
+Supabase's built-in mailer only reaches members of the Supabase organisation. To email every admin, set custom SMTP:
+
+- **No domain (simplest): Gmail.** Google account → Security → turn on 2-Step Verification → App passwords → create one named "Supabase" (16 characters).
+  Supabase → Authentication → Emails → SMTP Settings → enable custom SMTP: host `smtp.gmail.com`, port `587`, username = the Gmail address, password = the app password, sender email = the same Gmail, sender name `Budmintan`. Save. Gmail allows about 500 emails a day.
+- **With your own domain: Resend** (free tier). Verify the domain in Resend, create an API key, then the same SMTP screen: host `smtp.resend.com`, port `465`, username `resend`, password = the API key. Without a verified domain Resend only delivers to the Resend account's own email.
+- Optional: Authentication → Emails → Templates → Reset password, Thai subject "ตั้งรหัสผ่านใหม่ Budmintan"; and Security notifications → Password changed, to email admins when their password changes.
+
 ### Hosting on GitHub Pages
 
 Repository → Settings → Pages → Deploy from a branch → `main` / root. The site appears at `https://<user>.github.io/badminton-matchmaker/`.

@@ -30,6 +30,10 @@
     setClub: function (id) { club = id; },
     createClub: async function (name) { return must(await c.rpc('create_club', { p_name: name })); },
     renameClub: async function (id, name) { must(await c.from('clubs').update({ name: name }).eq('id', id)); },
+    /* pair rules of this club: [{id, a, b, kind: 'with'|'apart'}] */
+    loadRules: async function () { return must(await c.from('pair_rules').select('id,a,b,kind').eq('club_id', club).order('id')); },
+    addRule: async function (a, b, kind) { return must(await c.from('pair_rules').insert({ club_id: club, a: a, b: b, kind: kind }).select('id,a,b,kind').single()); },
+    deleteRule: async function (id) { must(await c.from('pair_rules').delete().eq('id', id)); },
     leaveClub: async function (id) { must(await c.rpc('leave_club', { p_club_id: id })); },
     deleteClub: async function (id, name) { must(await c.rpc('delete_club', { p_club_id: id, p_name: name })); },
 
@@ -115,7 +119,7 @@
       if (!sess.length) return [];
       var ids = sess.map(function (s) { return s.id; });
       var ms = must(await c.from('matches')
-        .select('id,session_id,seq,court,mode,team_a,team_b,winner,match_players(player_id,won,rating_before,rating_after)')
+        .select('*,match_players(player_id,won,rating_before,rating_after)')
         .in('session_id', ids).order('seq'));
       var names = {};
       must(await c.from('players').select('id,name').eq('club_id', club)).forEach(function (p) { names[p.id] = p.name; });
@@ -138,7 +142,7 @@
         try { label = new Date(s.played_on + 'T12:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { }
         return {
           ts: s.ended_at ? Date.parse(s.ended_at) : 0, label: label, count: list.length, players: rows,
-          matches: list.map(function (m) { return { t: [m.team_a.map(nm), m.team_b.map(nm)], w: m.winner, mode: m.mode }; })
+          matches: list.map(function (m) { var x = { t: [m.team_a.map(nm), m.team_b.map(nm)], w: m.winner, mode: m.mode }; if (m.score_a != null && m.score_b != null) x.sc = [m.score_a, m.score_b]; return x; })
         };
       });
     },

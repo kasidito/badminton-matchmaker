@@ -18,6 +18,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 1. **Who plays next:** fewest finished matches this night (`base + played`), then longest waiting (`freeSince`), then a random number `p.qr` drawn when the player became free (check-in or result saved). Using a stored number keeps the on-screen queue and the draw identical. This order always wins; modes may only bend it inside the flex window.
 2. **Rest one round** (`p.rest`, ขอพัก on the banner): the player is left out of `queueOrder`/`freeCount` and the next draw. The flag clears in `fill()` once a draw took someone who was not ahead of them (more matches, or same matches and free no earlier), so they sit out exactly once and come back at the front. Swapping them in by hand also clears it. Can be set for someone on court ("พักตาหน้า").
 2b. **Late arrivals / re-check-in:** `base` is raised so they start level with the lowest active player.
+2c. **Pair rules** (`pair_rules` table, `S.rules`, Players tab → คู่พิเศษ): `with` = always partners when both are here; if one is on court the other waits (`lineup().held`, chip tag รอคู่). `apart` = never on the same court. `lineup()` keeps a with-pair next to each other in the queue, `takeUnits()` never splits them, single-court draws skip apart conflicts, and multi-court draws add a 5000 cost for any broken rule. `nextFour()` is what the empty-court hint and the ลงต่อ tags show, so they always match the draw. Rules only apply when both players are checked in.
 3. **Flex window** (`S.flex`, default 4): Competitive and Social courts may pick from the first `4*k + flex` people in the queue. Skipping someone costs 10, and skipping someone with fewer matches costs 30 per match of difference. Normal courts never use flex.
 4. **Team split:** among the 3 possible pairings, minimise repeat partners (weight 3x) and repeat opponents, avoid the pairing just redrawn, and balance team MMR (`/30` normal, `/15` competitive and social).
 5. **Modes:** Competitive adds `spread/5` (wants close ratings); Social subtracts `spread/12` (wants a mix).
@@ -29,6 +30,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 - **Bird ranks** (`A.BIRDS`, computed in `ratings()` as `RT.B`): ลูกเจี๊ยบ <1275, นกกระจอก 1275, นกพิราบ 1425, เหยี่ยว 1575, อินทรี 1725, ฟีนิกซ์ 1875. Up as soon as the floor is reached, down only after falling 25 below it (`stepBird`). Each start level lands in its own bird. Saving a result toasts rank changes. Illustrations are emblem symbols `#b-<bird>` in `index.html` (fixed colours on purpose): the frame metal climbs with the rank (iron coin, bronze coin, silver shield, gold shield, platinum shield with star, fire shield with crown), and wings break out of the frame from เหยี่ยว up. Source: drawn by a small generator; edit the symbols directly.
 - OpenSkill Weng-Lin Bradley-Terry for two teams, scaled so 1 OpenSkill point = 15 MMR: mu starts at the level MMR, sigma at 125 (`A.SIG0`), beta 62.5, tau 1.25. Team strength is the sum of the two players; each player's share of the change is their sigma² over the team's. A new player moves ~30 MMR per match, a settled one (sigma ~50) ~10. Social courts count half. `A.settled(RT, id)` = sigma < 105 (about 10 matches); below that the UI shows ยังไม่นิ่ง. `winProb(RT, t)` uses the same model.
 - Switched from Elo on 21 Oct 2026 before any real matches were played, so nothing needed converting.
+- **Optional score** (`live.sc`, `done.sc` = [a, b]; `matches.score_a/score_b`): typing both scores picks the winner. The rating change is multiplied by `marginFactor` = 0.75 + 0.5 × min(points apart, 15)/15 (21–19 → 0.82, 21–15 → 0.95, 21–6 → 1.25). A score that disagrees with the picked winner is dropped on save.
 - Ratings are always **recomputed by replaying tonight's matches** from `start` plus manual edits (`S.adj`, applied before match index `at`). Never store a running rating in state. Editing or deleting a past match must just change `S.done`.
 - End day: `carryForward()` → `players.start_mmr` (mu), `players.start_sigma`, `career_games` (via `close_session`).
 
@@ -39,9 +41,10 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
   v: 4, sessionId, title,
   players: [{ id, name, active /* here tonight */, base, level: 'B'|'N'|'I'|'A'|'P', start /* mu */, sigma, games, freeSince, qr, rest, aliases, pending /* added offline, negative id */ }],
   courts:  [{ mode: 'normal'|'competitive'|'social' }],
-  live:    [null | { t: [[a,b],[c,d]], w: null|0|1, at }],   // one slot per court
+  live:    [null | { t: [[a,b],[c,d]], w: null|0|1, sc?: [a,b], at }],   // one slot per court; sc = optional score
   done:    [{ t, w, mode, court, at, end }],                  // finished matches, in order
   adj:     [{ at, id, to }],                                   // manual MMR edits
+  rules:   [{ id, a, b, kind: 'with'|'apart' }],              // club pair rules, loaded from pair_rules
   days:    [...],                                              // past nights, loaded from DB, never synced
   flex, board
 }
@@ -63,7 +66,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 - **Undo** is an in-memory stack of state snapshots (`ui.undos`, max 30), pushed by `toast(msg, snapshot)`. Undo keeps the current `sessionId`, `title` and `days`. Cleared on End day.
 - **Edit a member**: pencil on the member row opens name + MMR. The name is written straight to `players` (unique, needs online); the MMR becomes a normal `S.adj` edit (undoable).
 - **Other admins**: Settings → ผู้ดูแลก๊วน calls the `manage-admins` edge function (`supabase/functions/manage-admins`, deployed with verify_jwt, uses the service role and checks the caller runs the `club_id` sent by the app). Actions per club: list, add (creates the auth user with a starting password, no email, or adds an existing account), remove (not self, not the last), reset another admin's password (only if every club they run is one the caller also runs). `tests/fake-supabase.js` mirrors it under `functions.invoke`.
-- **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address. Without custom SMTP, Supabase only emails addresses that are members of the Supabase org team, so for other admins the fallback is an admin setting a new password for them in ผู้ดูแลก๊วน.
+- **Password reset** uses `resetPasswordForEmail` with `redirectTo` = the page URL; boot detects `type=recovery` in the hash and shows the new-password form. Supabase Site URL / Redirect URLs must include the Pages address. Without custom SMTP, Supabase only emails addresses that are members of the Supabase org team, so for other admins the fallback is an admin setting a new password for them in ผู้ดูแลก๊วน. Custom SMTP is set in the dashboard (README → Email); Resend needs a verified domain to email anyone but the account owner, so the no-domain route is Gmail SMTP with an app password.
 
 ## Database
 
@@ -80,6 +83,7 @@ npm test          # node --test tests/algo.test.js
 npm run e2e       # Playwright: tests/smoke.js (iPad evening) + tests/flows.js (phone, edge cases, undo, admins, clubs, password) against tests/fake-supabase.js
 npm run explore   # seeded random long run with invariant checks (phone/iPad, light/dark)
 npm run test:db   # all migrations in PGlite + per-user permission checks (tests/db/permissions.sql)
+npm run uat       # walks docs/UAT.md and prints PASS / FAIL / MANUAL per line (results kept in docs/UAT-results.md)
 ```
 
 When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` to match, and add a migration file. Never edit an applied migration.

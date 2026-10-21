@@ -100,7 +100,7 @@ const viewText = page => page.textContent('#view');
   const onCourt = await page.$eval('[data-act=pick][data-ci="1"][data-s="0"][data-i="0"]', el => [...el.childNodes].find(n => n.nodeType === 3).textContent);
   await page.click('[data-tab=people]');
   const rowSwitch = await page.$$eval('.row', (rows, name) => { const r = rows.find(x => x.querySelector('.who b').textContent === name); return r ? r.querySelector('input[data-act=toggle]').dataset.id : null; }, onCourt.replace(/MMR.*$/, ''));
-  await page.uncheck(`input[data-act=toggle][data-id="${rowSwitch}"]`, { force: true });
+  await page.$eval(`input[data-act=toggle][data-id="${rowSwitch}"]`, el => { el.scrollIntoView({ block: 'center' }); el.click(); });
   await page.click('[data-tab=play]');
   check('checking out someone on court flags that court', (await viewText(page)).includes('ปิดสถานะเล่นแล้ว'));
   check('a flagged court cannot be saved', (await page.$('[data-act=save][data-ci="1"]')) === null);
@@ -154,7 +154,7 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-tab=play]');
   check('board-mode icon is not shown on a phone (it is in Settings)', !(await page.isVisible('#boardBtn')));
   await page.click('#setBtn'); await page.click('label:has([data-act=boardsw]) .track'); await page.click('[data-tab=play]');
-  check('board mode hides court buttons', !(await page.isVisible('.court-actions')) && !(await page.isVisible('#dock')));
+  check('board mode hides court buttons', !(await page.isVisible('.court-actions')) && !(await page.isVisible('[data-act=win]')) && !(await page.isVisible('#dock')));
   await page.click('#setBtn'); await page.click('label:has([data-act=boardsw]) .track'); await page.click('[data-tab=play]');
 
   // session closed elsewhere (another device ended the night)
@@ -463,6 +463,43 @@ const viewText = page => page.textContent('#view');
   await p2.click('#setBtn');
   await p2.click('details.sdetails:has(.sbody p) > summary').catch(() => {});
   check('the last club cannot be left or deleted', (await p2.$('[data-act=club-leave]')) === null && (await p2.$('#deleteClubForm')) === null);
+
+  /* ---------- pair rules and optional scores ---------- */
+  await p2.click('[data-tab=people]');
+  const idOf = async n => (await db(p2)).players.find(p => p.name === n && p.club_id === 1).id;
+  await p2.selectOption('#ruleA', String(await idOf('Ard')));
+  await p2.selectOption('#ruleB', String(await idOf('ภู')));
+  await p2.selectOption('#ruleKind', 'with');
+  await p2.click('#ruleForm button[type=submit]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  await p2.selectOption('#ruleA', String(await idOf('เดือน')));
+  await p2.selectOption('#ruleB', String(await idOf('กร')));
+  await p2.selectOption('#ruleKind', 'apart');
+  await p2.click('#ruleForm button[type=submit]');
+  await p2.waitForSelector('[data-act=rule-del] >> nth=1');
+  check('pair rules are saved for the club', (await db(p2)).pair_rules.length === 2 && (await viewText(p2)).includes('เล่นคู่กันเสมอ'));
+  await p2.click('[data-act=checkall]').catch(() => {});
+  await p2.click('[data-tab=play]');
+  await p2.evaluate(() => { const b = document.querySelector('[data-act=fill]:not([disabled])'); if (b) b.click(); });
+  await p2.waitForTimeout(200);
+  const courtsNow = await p2.$$eval('.match', els => els.map(m => [...m.querySelectorAll('.team')].map(t => [...t.querySelectorAll('.pl')].map(b => [...b.childNodes].find(n => n.nodeType === 3).textContent))));
+  const flat = c => c[0].concat(c[1]);
+  check('rules hold on the courts', courtsNow.length > 0 && courtsNow.every(c => !(flat(c).includes('เดือน') && flat(c).includes('กร')) && (!(flat(c).includes('Ard') || flat(c).includes('ภู')) || c.some(t => t.includes('Ard') && t.includes('ภู')))), JSON.stringify(courtsNow));
+  await p2.fill('[data-act=score][data-ci="0"][data-s="0"]', '21');
+  await p2.fill('[data-act=score][data-ci="0"][data-s="1"]', '15');
+  await p2.click('h2');                                   // leave the score boxes
+  await p2.waitForSelector('[data-act=save][data-ci="0"]');
+  check('typing the score picks the winner', (await p2.$('.match >> nth=0')).$('.team.win') !== null && (await p2.textContent('[data-act=save][data-ci="0"]')).includes('ชนะ'));
+  await p2.click('[data-act=save][data-ci="0"]');
+  await saved(p2);
+  d = await db(p2);
+  check('the score is stored with the match', d.matches.some(m => m.score_a === 21 && m.score_b === 15));
+  await p2.click('[data-tab=sum]');
+  check('history shows the score', (await viewText(p2)).includes('21–15'));
+  await p2.click('[data-tab=people]');
+  await p2.click('[data-act=rule-del]');
+  await p2.waitForFunction(() => !document.querySelector('.busy'));
+  check('a rule can be removed', (await db(p2)).pair_rules.length === 1);
 
   await p2.click('#setBtn');
   await p2.click('[data-act=theme][data-v=dark]');

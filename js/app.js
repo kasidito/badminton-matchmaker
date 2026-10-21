@@ -90,7 +90,7 @@
       matches: S.done.map(function (m, i) {
         var tr = trail[i];
         return {
-          seq: i + 1, court: m.court || 0, mode: m.mode || 'normal', a: m.t[0], b: m.t[1], w: m.w,
+          seq: i + 1, court: m.court || 0, mode: m.mode || 'normal', a: m.t[0], b: m.t[1], w: m.w, sc: A.validScore(m.sc) ? m.sc : null,
           started_at: iso(m.at), ended_at: iso(m.end),
           players: m.t[0].concat(m.t[1]).map(function (id) {
             var team = m.t[0].indexOf(id) >= 0 ? 0 : 1;
@@ -307,7 +307,7 @@
     sync.dirty = false;
     var cache = readCache();
     try {
-      var res = await Promise.all([DB.loadPlayers(), DB.openSession(), DB.loadClosedDays(30)]);
+      var res = await Promise.all([DB.loadPlayers(), DB.openSession(), DB.loadClosedDays(30), DB.loadRules().catch(function () { return null; })]);
       var session = res[1];
       // a night opened on an earlier day but never used is moved to today
       if (session && session.played_on !== todayISO() && !sessionUsed(session)) {
@@ -315,6 +315,7 @@
       }
       S = buildState(session, res[0], cache);
       S.days = res[2];
+      if (res[3]) S.rules = res[3]; else S.rules = S.rules || [];
       sync.dirty = !!(cache && cache.dirty && cache.S.sessionId === (session ? session.id : null));
     } catch (e) {
       if (!cache) { showGate('<h1>โหลดข้อมูลไม่ได้</h1><p class="muted">' + esc(errMsg(e)) + '</p><button class="btn primary" data-act="reload">ลองใหม่</button>'); return; }
@@ -505,6 +506,37 @@
     if (d && d.dataset && d.dataset.k) { ui.det = ui.det || {}; ui.det[d.dataset.k] = !d.open; }
   }, true);
 
+  /* ---------- pair rules (club-wide, saved in the database) ---------- */
+  function rulesCard() {
+    var map = byId(), members = S.players.slice().sort(function (a, b) { return a.name.localeCompare(b.name, 'th'); }).filter(function (p) { return !p.pending; });
+    var h = '<div class="card span"><h2>คู่พิเศษ</h2><p class="muted small">เล่นคู่กันเสมอ: ถ้ามาทั้งคู่ จะลงสนามพร้อมกันเป็นทีมเดียวกัน ถ้าอีกคนยังเล่นอยู่ อีกคนจะรอ · ไม่ให้เจอกัน: ไม่ลงสนามเดียวกันเลย กฎใช้เฉพาะคืนที่มาทั้งสองคน</p>';
+    (S.rules || []).forEach(function (r) {
+      var a = map[r.a], b = map[r.b]; if (!a || !b) return;
+      h += '<div class="srow"><div class="stext"><b>' + esc(a.name) + (r.kind === 'with' ? ' + ' : ' / ') + esc(b.name) + '</b><span>' + (r.kind === 'with' ? 'เล่นคู่กันเสมอ' : 'ไม่ให้เจอกัน') + '</span></div>' +
+        '<button class="icon danger-ico" data-act="rule-del" data-id="' + r.id + '" aria-label="ลบกฎ ' + esc(a.name) + ' กับ ' + esc(b.name) + '">' + ic('trash') + '</button></div>';
+    });
+    var opts = members.map(function (p) { return '<option value="' + p.id + '">' + esc(p.name) + '</option>'; }).join('');
+    h += '<form id="ruleForm" class="ruleform" autocomplete="off"><select class="field" id="ruleA" aria-label="คนแรก"><option value="">เลือกคน</option>' + opts + '</select>' +
+      '<select class="field" id="ruleB" aria-label="คนที่สอง"><option value="">เลือกคน</option>' + opts + '</select>' +
+      '<select class="field" id="ruleKind" aria-label="แบบของกฎ"><option value="with">เล่นคู่กันเสมอ</option><option value="apart">ไม่ให้เจอกัน</option></select>' +
+      '<button class="btn sm primary" type="submit">' + ic('plus') + 'เพิ่มกฎ</button></form></div>';
+    return h;
+  }
+  async function addRule() {
+    var a = +$('ruleA').value, b = +$('ruleB').value, kind = $('ruleKind').value;
+    if (!a || !b || a === b) { toast('เลือกสองคนที่ต่างกัน', null); return; }
+    if ((S.rules || []).some(function (r) { return (r.a === a && r.b === b) || (r.a === b && r.b === a); })) { toast('สองคนนี้มีกฎอยู่แล้ว ลบอันเดิมก่อน', null); return; }
+    if (kind === 'with' && (S.rules || []).some(function (r) { return r.kind === 'with' && [r.a, r.b].some(function (x) { return x === a || x === b; }); })) { toast('คนหนึ่งเล่นคู่กันเสมอได้กับคนเดียว', null); return; }
+    try { var row = await DB.addRule(a, b, kind); S.rules = (S.rules || []).concat([row]); writeCache(); toast('เพิ่มกฎแล้ว', null); }
+    catch (e) { toast('เพิ่มกฎไม่ได้: ' + (isOffline(e) ? 'ต้องออนไลน์' : errMsg(e)), null); }
+    render();
+  }
+  async function deleteRule(id) {
+    try { await DB.deleteRule(id); S.rules = (S.rules || []).filter(function (r) { return r.id !== id; }); writeCache(); toast('ลบกฎแล้ว', null); }
+    catch (e) { toast('ลบกฎไม่ได้: ' + (isOffline(e) ? 'ต้องออนไลน์' : errMsg(e)), null); }
+    render();
+  }
+
   /* ---------- bird ranks ---------- */
   function bird(i, size) {
     var b = A.BIRDS[i] || A.BIRDS[0];
@@ -542,6 +574,7 @@
     var pct = Math.round((s ? 1 - p : p) * 100);
     return '<div class="team ' + cls + state + '"><span class="tlabel">ทีม ' + (s ? 'B' : 'A') + '</span>' + names +
       '<span class="tmeta" title="MMR เฉลี่ยของทีม และโอกาสชนะ">เฉลี่ย ' + avg + ' · ' + pct + '%</span>' +
+      '<label class="scin"><span>แต้ม</span><input type="number" inputmode="numeric" min="0" max="99" placeholder="–" data-act="score" data-ci="' + ci + '" data-s="' + s + '" value="' + (c.sc && c.sc[s] != null ? c.sc[s] : '') + '" aria-label="แต้มทีม ' + (s ? 'B' : 'A') + ' สนาม ' + (ci + 1) + '"></label>' +
       '<button class="won' + (c.w === s ? ' on' : '') + '" data-act="win" data-ci="' + ci + '" data-s="' + s + '" aria-pressed="' + (c.w === s) + '">' + ic('check') + (c.w === s ? 'ชนะ' : 'ทีมนี้ชนะ') + '</button></div>';
   }
   function courtHtml(c, ci, map, RT, st, free, next) {
@@ -611,11 +644,14 @@
       h += '</div>';
     }
     if (q.length) {
+      var L = A.lineup(S, null), nx = A.nextFour(S), heldSet = {};
+      L.held.forEach(function (id) { heldSet[id] = 1; });
       h += '<div class="chips">';
-      q.forEach(function (x, i) {
-        var pl = map[x.id], w = mins(pl.freeSince);
-        h += '<button class="chip' + (i < 4 ? ' next' : '') + (sameSel({ id: x.id }) ? ' sel' : '') + '" data-act="pickq" data-id="' + x.id + '">' + bird(RT.B[x.id], 'sm') +
-          '<span class="cn">' + esc(pl.name) + '</span><span class="cm">' + (st.played[x.id] ? 'เล่น ' + st.played[x.id] : 'ยังไม่เล่น') + (w ? ' · ' + w + ' น.' : '') + '</span>' + (i < 4 ? '<span class="tag-next">ลงต่อ</span>' : '') + '</button>';
+      L.list.map(function (x) { return x.id; }).concat(L.held).forEach(function (id) {
+        var pl = map[id], w = mins(pl.freeSince), isNext = nx.indexOf(id) >= 0, mate = heldSet[id] ? (S.rules || []).filter(function (r) { return r.kind === 'with' && (r.a === id || r.b === id); })[0] : null;
+        h += '<button class="chip' + (isNext ? ' next' : '') + (heldSet[id] ? ' resting' : '') + (sameSel({ id: id }) ? ' sel' : '') + '" data-act="pickq" data-id="' + id + '">' + bird(RT.B[id], 'sm') +
+          '<span class="cn">' + esc(pl.name) + '</span><span class="cm">' + (st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น') + (w ? ' · ' + w + ' น.' : '') + '</span>' +
+          (isNext ? '<span class="tag-next">ลงต่อ</span>' : mate ? '<span class="tag-rest">รอคู่</span>' : '') + '</button>';
       });
       h += '</div>';
     }
@@ -639,7 +675,7 @@
     S.live.forEach(function (c, ci) {
       var next = null;
       if (!c) {
-        if (firstEmpty < 0) { firstEmpty = ci; next = q.slice(0, 4).map(function (x) { return x.id; }); }
+        if (firstEmpty < 0) { firstEmpty = ci; next = A.nextFour(S); }
         else next = { after: firstEmpty };
       }
       h += courtHtml(c, ci, map, RT, st, free, next);
@@ -702,6 +738,7 @@
     else h += '<p class="muted small">มาครบทุกคน</p>';
     away.forEach(function (p) { h += memberRow(p, st, RT, on); });
     h += '</details></div>';
+    h += rulesCard();
     h += '<div class="line"><span class="muted small">ยศตั้งต้นใช้ตอนเพิ่มคนใหม่และตอนรีเซ็ต: ลูกเจี๊ยบ 1200 · นกกระจอก 1350 · นกพิราบ 1500 · เหยี่ยว 1650 · อินทรี 1800</span>' +
       '<button class="btn sm ghost" data-act="editmembers">' + (ui.editMembers ? ic('check') + 'เสร็จ' : ic('trash') + 'ลบสมาชิก') + '</button></div>';
     if (ui.editMembers) h += '<p class="note small">แตะถังขยะสีแดงเพื่อลบคนที่ยังไม่ได้เล่นคืนนี้ ประวัติเดิมยังอยู่ในระบบ</p>';
@@ -745,7 +782,8 @@
   }
   function deltaHtml(d) { return '<span class="delta ' + (d > 0 ? 'up' : d < 0 ? 'down' : '') + '">' + fmtDelta(d) + '</span>'; }
   function matchText(nm, m) {
-    return nm(m.t[0][0]) + ' + ' + nm(m.t[0][1]) + (m.w === 0 ? ' <b>(ชนะ)</b>' : '') + ' พบ ' + nm(m.t[1][0]) + ' + ' + nm(m.t[1][1]) + (m.w === 1 ? ' <b>(ชนะ)</b>' : '');
+    return nm(m.t[0][0]) + ' + ' + nm(m.t[0][1]) + (m.w === 0 ? ' <b>(ชนะ)</b>' : '') + ' พบ ' + nm(m.t[1][0]) + ' + ' + nm(m.t[1][1]) + (m.w === 1 ? ' <b>(ชนะ)</b>' : '') +
+      (A.validScore(m.sc) ? ' · <b>' + m.sc[0] + '–' + m.sc[1] + '</b>' : '');
   }
   function modeTag(mode) { return mode && mode !== 'normal' ? ' <span class="tag m-' + mode + '">' + MODE_LABEL[mode] + '</span>' : ''; }
   function viewSummary() {
@@ -1140,6 +1178,7 @@
     else if (a === 'edit-player') ui.editPlayer = +t.dataset.id;
     else if (a === 'setlevel') { setLevel(+t.dataset.id, t.dataset.lv); }
     else if (a === 'club-switch') { switchClub(+t.dataset.id); return; }
+    else if (a === 'rule-del') { deleteRule(+t.dataset.id); return; }
     else if (a === 'club-leave') { if (confirmTap('leave')) { leaveClub(); return; } }
     else if (a === 'ask-same') { answerName(+t.dataset.i, +t.dataset.id); return; }
     else if (a === 'ask-new') { answerName(+t.dataset.i, null); return; }
@@ -1170,6 +1209,10 @@
     if (JSON.stringify(S) !== before) changed();
     render();
   });
+  document.addEventListener('focusout', function (e) {
+    var t = e.target, n = e.relatedTarget;
+    if (S && t.dataset && t.dataset.act === 'score' && !(n && n.dataset && n.dataset.act === 'score')) setTimeout(render, 0);
+  });
   document.addEventListener('change', function (e) {
     var t = e.target; if (!t.dataset || !S) return;
     var a = t.dataset.act;
@@ -1178,6 +1221,13 @@
       setLevel(+t.dataset.id, t.value);
     }
     else if (a === 'boardsw') S.board = t.checked;
+    else if (a === 'score') {
+      var sc = S.live[+t.dataset.ci]; if (!sc) return;
+      var v = t.value === '' ? null : Math.max(0, Math.min(99, parseInt(t.value, 10)));
+      sc.sc = sc.sc || [null, null]; sc.sc[+t.dataset.s] = isNaN(v) ? null : v;
+      if (A.validScore(sc.sc)) sc.w = sc.sc[0] > sc.sc[1] ? 0 : 1;   // the higher score wins
+      changed(); return;                       // re-render when focus leaves the score boxes, so the next box keeps the tap
+    }
     else return;
     changed(); render();
   });
@@ -1213,6 +1263,7 @@
       catch (err) { toast('เปลี่ยนรหัสผ่านไม่ได้: ' + errMsg(err), null); }
     }
     else if (f.id === 'playerForm') { await savePlayerEdit(f); }
+    else if (f.id === 'ruleForm') { await addRule(); }
     else if (f.id === 'clubForm') {
       var cn = $('clubName').value.replace(/\s+/g, ' ').trim();
       if (!cn || !ui.club) return;

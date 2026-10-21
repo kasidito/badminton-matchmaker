@@ -7,12 +7,12 @@
   var names = ['ชิน', 'โฟล์ค', 'เดือน', 'นัทซ้าย', 'เปตอง', 'ป๊อป', 'Ard', 'ภู', 'กร', 'ตรัย', 'บีม', 'Yiip', 'ตั้ง'];
   function fresh() {
     return {
-      seq: { players: names.length, sessions: 0, matches: 0, clubs: 1 }, auth: null,
+      seq: { players: names.length, sessions: 0, matches: 0, clubs: 1, pair_rules: 0 }, auth: null,
       users: [{ id: 'u1', email: 'admin@example.com' }],
       clubs: [{ id: 1, name: 'ก๊วนแบด' }],
       club_admins: [{ club_id: 1, user_id: 'u1' }],
       players: names.map(function (n, i) { return { id: i + 1, club_id: 1, name: n, level: 'I', start_mmr: 1500, start_sigma: null, aliases: [], career_games: 0, active: true }; }),
-      sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: []
+      sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: [], pair_rules: []
     };
   }
   var db = JSON.parse(localStorage.getItem(KEY) || 'null') || fresh();
@@ -33,6 +33,7 @@
       limit: function (n) { st.lim = n; return api; },
       insert: function (p) { st.op = 'insert'; st.payload = p; return api; },
       update: function (p) { st.op = 'update'; st.payload = p; return api; },
+      delete: function () { st.op = 'delete'; return api; },
       single: function () { st.single = true; return api; },
       then: function (ok) {
         try { offline(); var data = exec(); persist(); ok({ data: data, error: null }); }
@@ -44,7 +45,7 @@
       var me = db.auth && db.auth.user.id;
       var mine = db.club_admins.filter(function (x) { return x.user_id === me; }).map(function (x) { return x.club_id; });
       // row level security, roughly: clubs and club-owned rows are visible only to that club's admins
-      if (table === 'clubs' || table === 'players' || table === 'sessions') {
+      if (table === 'clubs' || table === 'players' || table === 'sessions' || table === 'pair_rules') {
         var col = table === 'clubs' ? 'id' : 'club_id';
         rows = rows.filter(function (r) { return mine.indexOf(r[col]) >= 0; });
         if (st.op === 'insert') rows = db[table];
@@ -70,6 +71,7 @@
         return st.single ? out[0] : out;
       }
       var hit = rows.filter(function (r) { return st.filters.every(function (f) { return f(r); }); });
+      if (st.op === 'delete') { db[table] = db[table].filter(function (r) { return hit.indexOf(r) < 0; }); return null; }
       if (st.op === 'update') {
         hit.forEach(function (r) { Object.assign(r, st.payload); });
         if (!st.returning) return null;
@@ -135,7 +137,7 @@
           db.match_players = db.match_players.filter(function (mp) { return old.indexOf(mp.match_id) < 0; });
           a.p_matches.forEach(function (m) {
             var id = ++db.seq.matches;
-            db.matches.push({ id: id, session_id: s.id, seq: m.seq, court: m.court, mode: m.mode, team_a: m.a, team_b: m.b, winner: m.w, started_at: m.started_at, ended_at: m.ended_at });
+            db.matches.push({ id: id, session_id: s.id, seq: m.seq, court: m.court, mode: m.mode, team_a: m.a, team_b: m.b, winner: m.w, started_at: m.started_at, ended_at: m.ended_at, score_a: m.sc ? m.sc[0] : null, score_b: m.sc ? m.sc[1] : null });
             m.players.forEach(function (x) { db.match_players.push({ match_id: id, player_id: x.id, team: x.team, won: x.won, rating_before: x.before, rating_after: x.after }); });
           });
           db.rating_adjustments = db.rating_adjustments.filter(function (x) { return x.session_id !== s.id; })

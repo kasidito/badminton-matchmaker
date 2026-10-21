@@ -270,9 +270,9 @@ h2.big{font-size:1.15rem}
 }
 
 /* board mode: big read-only display */
-body.board .court-actions,body.board .redraw,body.board .dock,body.board .selbar,body.board .toast,body.board .fill-inline{display:none!important}
+body.board .court-actions,body.board .won,body.board .restbtn,body.board .slot .btn,body.board .redraw,body.board .dock,body.board .selbar,body.board .toast,body.board .fill-inline{display:none!important}
 body.board .pl{font-size:1.6rem;pointer-events:none}
-body.board .chip{pointer-events:none}
+body.board .chip,body.board .modechip{pointer-events:none}
 body.board .cname{font-size:1.4rem}
 @media (max-width:360px){.match{grid-template-columns:1fr}.vs{height:26px}.vs::before{top:50%;bottom:auto;left:6px;right:6px;width:auto;height:3px;margin:-1.5px 0 0}}
 @media (max-width:420px){.hicons{gap:6px}.hicons .hbtn{width:40px;height:40px}.tab{font-size:.8rem;gap:3px}.tab .ico{width:1.05em;height:1.05em}}
@@ -416,3 +416,13 @@ body.board .cname{font-size:1.4rem}
 .statfacts{display:grid;gap:6px;font-size:.88rem}
 .statfacts b{display:inline-block;min-width:9em;color:var(--muted);font-weight:600}
 @media (max-width:420px){.srow2{grid-template-columns:34px minmax(0,1fr) 56px 4.5ch}}
+
+/* optional score on a team card */
+.scin{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding-inline:6px;font-size:.74rem;color:var(--team-muted)}
+.scin input{width:3.6em;min-height:36px;border-radius:10px;border:1.5px solid var(--line-strong);background:var(--field);color:var(--fg);text-align:center;font:700 1rem var(--font-display);padding:0 4px}
+body.board .scin{display:none}
+
+/* pair rules */
+.ruleform{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
+.ruleform .field{min-height:42px;padding:0 10px}
+@media (max-width:600px){.ruleform{grid-template-columns:1fr 1fr}.ruleform #ruleKind{grid-column:1/-1}.ruleform .btn{grid-column:1/-1}}
