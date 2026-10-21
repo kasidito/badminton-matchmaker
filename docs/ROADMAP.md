@@ -1,6 +1,6 @@
 # Roadmap
 
-Status as of 21 Oct 2026, 00:30. Owner decides order; update this file when something ships or changes.
+Status as of 21 Oct 2026, 10:30. Owner decides order; update this file when something ships or changes.
 
 ## Now: get to UAT
 
@@ -11,6 +11,7 @@ Status as of 21 Oct 2026, 00:30. Owner decides order; update this file when some
 | 3 | Run `docs/UAT.md` on the iPad and the phone; report issues | Owner | Waiting |
 | 4 | Add a second admin to ก๊วนแบด as a backup (forgot-password emails only reach Supabase team members) | Owner | Suggested |
 | 5 | Optional: leaked password protection (Supabase advisor; needs a paid plan) | Owner | Optional |
+| 6 | Run `20261021090000_openskill_aliases_club_tools.sql` in the SQL editor (sent as budmintan-openskill.sql) | Owner | Waiting |
 
 ## Shipped (20–21 Oct)
 
@@ -21,21 +22,15 @@ Status as of 21 Oct 2026, 00:30. Owner decides order; update this file when some
 - Edit member name and MMR; other admins (add with starting password, remove, reset password)
 - **Clubs**: players and nights per club, create/switch/rename clubs, admins per club, permissions checked in the database
 - Settings regrouped in two fixed columns
+- 21 Oct: OpenSkill ratings, "ใช่คนเดิมไหม" on check-in with remembered spellings, offline member add, LINE summary, all-nights stats, leave/delete club, Google Sheet removed
 - Tests: unit, two UI runs, seeded random long runs (`npm run explore`), database permission replay (`npm run test:db`)
 
 ## Next (suggested, owner to pick)
 
 | # | Item | Size | Why |
 |---|---|---|---|
-| 1 | Name matching on check-in: "ใช่คนเดิมไหม" for near-identical names, remember nicknames | S | LINE posts spell names differently; avoids duplicate members |
-| 2 | Copy tonight's summary to LINE (ranking, games per person, rank-ups) | S | Players see results without logging in |
-| 3 | In-app stats: all-time table, MMR chart per player, best partner, attendance | M | Replaces the Google Sheet idea |
-| 4 | Court timer alert (court over 20 min) and "สนามนี้นานสุด" on the banner | S | Fairness on busy nights |
-| 5 | Leave a club / delete an empty club | S | Clean-up after testing clubs |
-| 6 | Email sending through a free SMTP (e.g. Resend) for forgot password and new-admin invites | M | Today emails only reach Supabase team members |
-| 7 | OpenSkill ratings: compute from `match_players` history after 4–6 weeks, compare with Elo | M | Owner approved, waiting for data |
-| 8 | Remove Google Sheet code (owner skipped it) | S | Less to maintain |
-| 9 | Offline queue for adding members (today needs internet) | M | Bad wifi at the court |
+| 1 | Court timer alert (court over 20 min) and "สนามนี้นานสุด" on the banner | S | Fairness on busy nights |
+| 2 | Email sending through a free SMTP (e.g. Resend) for forgot password and new-admin invites | M | Today emails only reach Supabase team members |
 
 ## Later / ideas
 
