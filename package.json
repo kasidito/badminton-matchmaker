@@ -10,7 +10,8 @@
     "e2e": "node tests/smoke.js && node tests/flows.js",
     "test:db": "node tests/db/permissions.mjs",
     "explore": "node tests/explore.js",
-    "uat": "node tests/uat.js"
+    "uat": "node tests/uat.js",
+    "stamp": "node tools/stamp.js"
   },
   "devDependencies": {
     "playwright": "^1.47.0",
