@@ -42,6 +42,24 @@ const viewText = page => page.textContent('#view');
   const base = 'http://localhost:' + server.address().port + '/';
   const browser = await chromium.launch();
 
+  /* ---------- self-update: a newer index.html on the server makes the app reload past the cache ---------- */
+  {
+    const pu = await newPage(browser, base, 390, 844);
+    await pu.waitForSelector('#loginForm');
+    await pu.waitForTimeout(3600);
+    check('same version on the server: no reload', !/[?&]v=/.test(pu.url()));
+    await pu.route('**/index.html?check=*', async r => {
+      const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8').replace(/\?v=\w+/g, '?v=999999999999');
+      await r.fulfill({ body: html, contentType: 'text/html' });
+    });
+    await pu.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await pu.waitForURL(/[?&]v=999999999999/, { timeout: 5000 }).catch(() => {});
+    check('newer version on the server: the app reloads at a fresh URL', /[?&]v=999999999999/.test(pu.url()), pu.url());
+    await pu.waitForTimeout(3600);
+    check('and does not loop when the stamp still differs', /[?&]v=999999999999$/.test(pu.url().split('#')[0]));
+    await pu.context().close();
+  }
+
   /* ---------- phone, full evening ---------- */
   const page = await newPage(browser, base, 390, 844);
   check('phone: sign-in screen fits', await noSideScroll(page));

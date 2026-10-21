@@ -1517,5 +1517,29 @@
       el.textContent = k === 'court' ? courtAge(t) : k === 'hm' ? (t ? hmSince(t) : '–') : waitText(el.dataset.pre, t);
     });
   }, 30000);
+  /* ---------- self-update ----------
+     GitHub Pages lets phones cache index.html for up to 10 minutes, and a home-screen app can keep an old copy longer.
+     On start and whenever the app comes back to the front, fetch index.html past every cache and compare its ?v= stamp
+     with the one this page loaded; if it moved on, reload at a URL the cache has never seen. Local changes are already
+     in localStorage, so a reload loses nothing. Never while typing; at most one try per new stamp. */
+  function myStamp() { var el = document.querySelector('script[src*="js/app.js"]'), m = el && el.src.match(/[?&]v=(\w+)/); return m ? m[1] : null; }
+  async function checkUpdate() {
+    var mine = myStamp();
+    if (!mine || navigator.onLine === false) return;
+    try {
+      var r = await fetch('index.html?check=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      var m = (await r.text()).match(/js\/app\.js\?v=(\w+)/);
+      if (!m || m[1] === mine) return;
+      var ae = document.activeElement;
+      if (ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
+      try { if (sessionStorage.getItem('bmm-upd') === m[1]) return; sessionStorage.setItem('bmm-upd', m[1]); } catch (e) { }
+      if (sync.dirty && S) writeCache();
+      location.replace(location.pathname + '?v=' + m[1] + location.hash);
+    } catch (e) { }
+  }
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') checkUpdate(); });
+  setTimeout(checkUpdate, 3000);
+
   boot();
 })();
