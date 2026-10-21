@@ -1,6 +1,6 @@
 # Roadmap
 
-Status as of 21 Oct 2026, 10:30. Owner decides order; update this file when something ships or changes.
+Status as of 21 Oct 2026, 11:00. Owner decides order; update this file when something ships or changes.
 
 ## Now: get to UAT
 
@@ -12,6 +12,8 @@ Status as of 21 Oct 2026, 10:30. Owner decides order; update this file when some
 | 4 | Add a second admin to ก๊วนแบด as a backup (forgot-password emails only reach Supabase team members) | Owner | Suggested |
 | 5 | Optional: leaked password protection (Supabase advisor; needs a paid plan) | Owner | Optional |
 | 6 | Run `20261021090000_openskill_aliases_club_tools.sql` in the SQL editor | Owner | Done 21 Oct |
+| 7 | Run `20261021120000_pair_rules_scores.sql` in the SQL editor | Owner | Done 21 Oct (verified) |
+| 8 | Gmail SMTP (app password) in Authentication → Emails → SMTP, see README "Email" | Owner | Waiting |
 
 ## Shipped (20–21 Oct)
 
@@ -23,6 +25,7 @@ Status as of 21 Oct 2026, 10:30. Owner decides order; update this file when some
 - **Clubs**: players and nights per club, create/switch/rename clubs, admins per club, permissions checked in the database
 - Settings regrouped in two fixed columns
 - 21 Oct: OpenSkill ratings, "ใช่คนเดิมไหม" on check-in with remembered spellings, offline member add, LINE summary, all-nights stats, leave/delete club, Google Sheet removed
+- 21 Oct: pair rules (เล่นคู่กัน / ห้ามเจอกัน), optional real scores (feed MMR margin), UAT walk 53 pass / 0 fail / 5 manual
 - Tests: unit, two UI runs, seeded random long runs (`npm run explore`), database permission replay (`npm run test:db`)
 
 ## Next (suggested, owner to pick)
@@ -30,12 +33,9 @@ Status as of 21 Oct 2026, 10:30. Owner decides order; update this file when some
 | # | Item | Size | Why |
 |---|---|---|---|
 | 1 | Court timer alert (court over 20 min) and "สนามนี้นานสุด" on the banner | S | Fairness on busy nights |
-| 2 | Email sending through a free SMTP (e.g. Resend) for forgot password and new-admin invites | M | Today emails only reach Supabase team members |
 
 ## Later / ideas
 
-- Optional score entry (e.g. 21–15) feeding MMR margin
-- Pair rules: always together / never together
 - Leaving at a set time
 - Monthly or seasonal leaderboards (season reset toward 1500, best rank of the season)
 - Read-only link for players (only if the admin-only rule changes)
