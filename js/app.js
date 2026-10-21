@@ -4,7 +4,8 @@
   var A = window.Algo;
   var MODE_LABEL = { normal: 'ปกติ', competitive: 'แข่งขัน', social: 'สังสรรค์' };
   var MODE_ORDER = ['normal', 'competitive', 'social'];
-  var LV_LABEL = { B: 'เพิ่งเริ่ม', N: 'มือใหม่', I: 'กลาง', A: 'เก่ง', P: 'โหด' };
+  // starting levels are named after the bird rank they start in (owner's choice, 21 Oct 2026)
+  var LV_LABEL = { B: 'ลูกเจี๊ยบ', N: 'นกกระจอก', I: 'นกพิราบ', A: 'เหยี่ยว', P: 'อินทรี' };
   var LV_ORDER = ['B', 'N', 'I', 'A', 'P'];
   var LV_HINT = { B: 'ตีโต้ได้ไม่กี่ลูก เสิร์ฟยังพลาด', N: 'เล่นเป็นเกมได้ แต่พลาดบ่อย', I: 'คุมลูกได้ ยืนตำแหน่งคู่ถูก', A: 'ตบหนัก เล่นเกมรุกได้', P: 'เคยแข่งหรือเคยติดทีม' };
   var BIRD_HINT = { chick: 'เพิ่งฟักออกจากไข่', sparrow: 'เริ่มบินได้ ตีโต้เป็นเกม', pigeon: 'บินคล่อง เล่นได้ทุกตำแหน่ง', hawk: 'สายรุก ตบแรง', eagle: 'เจ้าเวหา คุมเกมได้', phoenix: 'ตำนานของก๊วน' };
@@ -649,7 +650,7 @@
     if (ui.editPlayer === p.id) return playerEditor(p, RT);
     var canDel = ui.editMembers && st.played[p.id] === 0 && !on[p.id];
     return '<div class="row' + (p.active ? '' : ' off') + '">' + bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + '</b><span>' + (p.pending ? '<i class="provtxt">รอบันทึก</i> · ' : '') + (p.active ? 'เล่น ' + st.played[p.id] + ' · ' : '') + 'MMR ' + Math.round(RT.R[p.id]) + '</span></div>' +
-      '<select class="lvl" data-act="level" data-id="' + p.id + '" aria-label="ระดับของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) { return '<option value="' + l + '"' + ((p.level || 'I') === l ? ' selected' : '') + '>' + LV_LABEL[l] + '</option>'; }).join('') + '</select>' +
+      '<select class="lvl" data-act="level" data-id="' + p.id + '" aria-label="ยศตั้งต้นของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) { return '<option value="' + l + '"' + ((p.level || 'I') === l ? ' selected' : '') + '>' + LV_LABEL[l] + '</option>'; }).join('') + '</select>' +
       '<label class="sw"><input type="checkbox" data-act="toggle" data-id="' + p.id + '"' + (p.active ? ' checked' : '') + ' aria-label="มาวันนี้ ' + esc(p.name) + '"><span class="track"></span></label>' +
       (canDel ? '<button class="icon danger-ico" data-act="remove" data-id="' + p.id + '" aria-label="ลบ ' + esc(p.name) + ' ออกจากสมาชิก">' + ic('trash') + '</button>'
         : ui.editMembers ? '<span class="icon"></span>' : '<button class="icon" data-act="edit-player" data-id="' + p.id + '" aria-label="แก้ชื่อหรือ MMR ของ ' + esc(p.name) + '">' + ic('pencil') + '</button>') + '</div>';
@@ -678,10 +679,10 @@
       h += '</div>';
     }
     if (fresh.length) {
-      h += '<div class="card span newcard"><div class="line"><h2>ตั้งระดับให้คนใหม่ (' + fresh.length + ')</h2><button class="btn sm primary" data-act="new-done">' + ic('check') + 'เสร็จ</button></div>' +
-        '<p class="muted small">ระดับใช้ตั้งคะแนนเริ่มต้น หลังจากนั้นคะแนนขยับตามผลแข่ง</p>';
+      h += '<div class="card span newcard"><div class="line"><h2>เลือกยศตั้งต้นให้คนใหม่ (' + fresh.length + ')</h2><button class="btn sm primary" data-act="new-done">' + ic('check') + 'เสร็จ</button></div>' +
+        '<p class="muted small">เลือกนกที่ใกล้ฝีมือที่สุดเป็นจุดเริ่ม หลังจากนั้นยศขึ้นลงตามผลแข่ง ฟีนิกซ์ต้องไต่ขึ้นไปเอง</p>';
       fresh.forEach(function (p) {
-        h += '<div class="newrow"><b>' + esc(p.name) + '</b><div class="lvpick" role="group" aria-label="ระดับของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) {
+        h += '<div class="newrow"><b>' + esc(p.name) + '</b><div class="lvpick" role="group" aria-label="ยศตั้งต้นของ ' + esc(p.name) + '">' + LV_ORDER.map(function (l) {
           var on = (p.level || 'I') === l;
           return '<button class="' + (on ? 'on' : '') + '" data-act="setlevel" data-id="' + p.id + '" data-lv="' + l + '" aria-pressed="' + on + '">' + bird(A.birdIndex(A.LV[l]), 'sm') + '<span>' + LV_LABEL[l] + '</span></button>';
         }).join('') + '</div><span class="muted small">' + LV_HINT[p.level || 'I'] + '</span></div>';
@@ -701,7 +702,7 @@
     else h += '<p class="muted small">มาครบทุกคน</p>';
     away.forEach(function (p) { h += memberRow(p, st, RT, on); });
     h += '</details></div>';
-    h += '<div class="line"><span class="muted small">ระดับใช้ตั้ง MMR เริ่มต้น: เพิ่งเริ่ม 1200 · มือใหม่ 1350 · กลาง 1500 · เก่ง 1650 · โหด 1800</span>' +
+    h += '<div class="line"><span class="muted small">ยศตั้งต้นใช้ตอนเพิ่มคนใหม่และตอนรีเซ็ต: ลูกเจี๊ยบ 1200 · นกกระจอก 1350 · นกพิราบ 1500 · เหยี่ยว 1650 · อินทรี 1800</span>' +
       '<button class="btn sm ghost" data-act="editmembers">' + (ui.editMembers ? ic('check') + 'เสร็จ' : ic('trash') + 'ลบสมาชิก') + '</button></div>';
     if (ui.editMembers) h += '<p class="note small">แตะถังขยะสีแดงเพื่อลบคนที่ยังไม่ได้เล่นคืนนี้ ประวัติเดิมยังอยู่ในระบบ</p>';
     return h;
