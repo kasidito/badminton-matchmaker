@@ -40,3 +40,4 @@ Status as of 21 Oct 2026, 11:00. Owner decides order; update this file when some
 - Monthly or seasonal leaderboards (season reset toward 1500, best rank of the season)
 - Read-only link for players (only if the admin-only rule changes)
 - Cost split (court + shuttles), paid checkbox. **On hold by owner's decision, 20 Oct 2026.**
+- Reserve list from the LINE post (names under the `------` line). **Declined by owner, 21 Oct 2026**: every numbered name is checked in.
