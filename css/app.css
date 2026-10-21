@@ -1,7 +1,14 @@
 /* Base reset. The page used to run inside a host that supplied these; on GitHub Pages it must carry its own.
    [hidden] must win over component display rules (.gate, .toast, .dock set display). */
 [hidden]{display:none!important}
-html{-webkit-text-size-adjust:100%;padding-top:env(safe-area-inset-top,0px)}
+html{-webkit-text-size-adjust:100%;padding-top:var(--sb)}
+/* --sb = space kept clear under the status bar. In the home-screen app iOS blurs whatever sits just under the
+   status bar, so there we add a flat strip in the page colour and start the header below it. */
+:root{--sb:env(safe-area-inset-top,0px)}
+@media (display-mode:standalone){
+  :root{--sb:calc(env(safe-area-inset-top,0px) + 22px)}
+  body::before{content:"";position:fixed;top:0;left:0;right:0;height:var(--sb);background:var(--bg);z-index:6;pointer-events:none}
+}
 body{margin:0}
 img{max-width:100%}
 
@@ -77,7 +84,7 @@ p{margin:0}
 .small{font-size:.85rem}
 
 /* header */
-.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:10px;display:grid;gap:10px;align-items:center;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand icons"}
+.top{position:sticky;top:var(--sb);z-index:5;background:var(--bg);padding-block:10px;display:grid;gap:10px;align-items:center;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"brand icons"}
 .brand{grid-area:brand;display:flex;align-items:center;gap:10px;min-width:0}
 .hicons{grid-area:icons;display:flex;gap:8px}
 .logo{width:38px;height:38px;border-radius:50%;background:var(--hi);color:var(--on-hi);display:grid;place-items:center;flex:none}
@@ -107,7 +114,7 @@ p{margin:0}
 .strip .fact:first-child b{color:var(--hi)}
 .strip .fact span{font-size:.76rem;color:var(--on-banner-muted);line-height:1.3}
 .note{background:var(--warn-bg);color:var(--warn-fg);border-radius:14px;padding:10px 12px;font-size:.9rem}
-.selbar{position:sticky;top:calc(env(safe-area-inset-top,0px) + var(--hdr));z-index:4;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--hi);color:var(--on-hi);border-radius:999px;padding:6px 6px 6px 14px;font-size:.9rem;box-shadow:var(--shadow-lg)}
+.selbar{position:sticky;top:calc(var(--sb) + var(--hdr));z-index:4;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--hi);color:var(--on-hi);border-radius:999px;padding:6px 6px 6px 14px;font-size:.9rem;box-shadow:var(--shadow-lg)}
 .selbar .btn{background:rgba(255,255,255,.6);border-color:transparent;color:var(--on-hi)}
 
 /* court: header row, then the court panel (stripes in light, gradient in dark) holding two team cards split by the net */
