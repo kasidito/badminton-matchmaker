@@ -184,7 +184,7 @@ const viewText = page => page.textContent('#view');
   await page.click('[data-act=reset]');
   await saved(page);
   d = await db(page);
-  check('reset clears tonight and puts MMR back to levels', d.matches.filter(m => m.session_id === d.sessions.find(s => s.status === 'open').id).length === 0 && d.players.find(p => p.id === 2).start_mmr === 1650);
+  check('reset clears tonight only', d.matches.filter(m => m.session_id === d.sessions.find(s => s.status === 'open').id).length === 0 && d.players.find(p => p.id === 2).start_mmr === 1650);
   check('no script errors on phone run', page.errors.length === 0, page.errors.join(' | '));
 
   /* ---------- new in this release ---------- */

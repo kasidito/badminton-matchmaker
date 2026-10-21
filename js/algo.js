@@ -336,9 +336,11 @@
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
     return snap;
   }
+  /* start tonight over: clears tonight's matches, MMR edits and courts. Ratings go back to where they were when
+     the night began (p.start/p.sigma/p.games carry earlier nights and are never touched here). */
   function resetGame(T) {
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
-    T.players.forEach(function (p) { p.base = 0; p.start = LV[p.level || 'I']; p.sigma = null; p.games = 0; p.freeSince = 0; p.rest = false; });
+    T.players.forEach(function (p) { p.base = 0; p.freeSince = 0; p.rest = false; });
   }
   /* renumber a player everywhere in a night (a member added offline gets its real id after the first sync) */
   function remapId(T, from, to) {

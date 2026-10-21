@@ -65,7 +65,7 @@ Tester: ______  Date: ______  Device: ______
 - [ ] MMR and uncertainty carry over to next time
 - [ ] Summary → เกมที่จบแล้ว shows tonight
 - [ ] A new night starts with nobody checked in
-- [ ] เริ่มเกมใหม่ resets ratings to the starting birds
+- [ ] เริ่มเกมใหม่ clears tonight only; MMR carried from earlier nights stays
 - [ ] and undo brings them back
 
 ## Layout

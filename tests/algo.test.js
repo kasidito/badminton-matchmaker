@@ -131,12 +131,16 @@ test('end of day carries MMR forward and empties the session', () => {
   T.players.forEach(p => assert.strictEqual(p.start, carry.find(c => c.id === p.id).start_mmr));
 });
 
-test('reset puts everyone back to their level rating', () => {
+test('reset clears tonight only: ratings carried from earlier nights stay', () => {
   const T = session(6, ['normal'], 0, ['N', 'I', 'A']);
-  T.players.forEach(p => { p.start = 1600; p.games = 12; });
+  T.players.forEach(p => { p.start = 1600; p.sigma = 70; p.games = 12; });
+  A.fillEmpty(T, Math.random); T.live[0].w = 0; A.saveResult(T, 0);
+  T.adj.push({ at: 1, id: 1, to: 1800 });
+  assert.notStrictEqual(Math.round(A.ratings(T.done, T.players, T.adj).R[1]), 1600);
   A.resetGame(T);
-  assert.deepStrictEqual(T.players.map(p => p.start), [1350, 1500, 1650, 1350, 1500, 1650]);
-  assert.ok(T.players.every(p => p.games === 0));
+  assert.strictEqual(T.done.length, 0); assert.strictEqual(T.adj.length, 0);
+  assert.ok(T.players.every(p => p.start === 1600 && p.sigma === 70 && p.games === 12));
+  assert.ok(Object.values(A.ratings(T.done, T.players, T.adj).R).every(r => r === 1600));
 });
 
 test('parses a LINE sign-up post and plain lists', () => {

@@ -22,6 +22,9 @@
   function activeCount() { return S.players.filter(function (p) { return p.active; }).length; }
   function fmtDelta(d) { return d > 0 ? '+' + d : String(d); }
   function mins(ts) { return ts ? Math.max(0, Math.floor((Date.now() - ts) / 60000)) : null; }
+  function courtAge(ts) { var m = mins(ts); return m ? 'เล่นมา ' + m + ' นาที' : 'เพิ่งเริ่ม'; }
+  function waitText(pre, ts) { var w = mins(ts); return pre + (w ? ' · ' + w + ' น.' : ''); }
+  function hmSince(t0) { var el = Math.max(0, Date.now() - t0); return Math.floor(el / 3600000) + ':' + ('0' + Math.floor(el / 60000) % 60).slice(-2); }
   function thaiDate(d, opts) { try { return d.toLocaleDateString('th-TH', opts); } catch (e) { return d.toISOString().slice(0, 10); } }
   function todayTitle() { return thaiDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
   function todayISO() { try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }); } catch (e) { return new Date().toISOString().slice(0, 10); } }
@@ -766,7 +769,7 @@
       return '<section class="court">' + head + '</div><div class="slot">' + hint + (free >= 4 ? '<button class="btn sm hi" data-act="draw" data-ci="' + ci + '">' + ic('shuffle') + 'สุ่มลงสนามนี้</button>' : '') + '</div></section>';
     }
     var stale = A.isStale(S, c), m = mins(c.at);
-    head += '<span class="badge">' + (m ? 'เล่นมา ' + m + ' นาที' : 'เพิ่งเริ่ม') + '</span>';
+    head += '<span class="badge" data-tick="court" data-t="' + (c.at || '') + '">' + courtAge(c.at) + '</span>';
     head += '<button class="redraw" data-act="redraw" data-ci="' + ci + '" aria-label="สุ่มสนาม ' + (ci + 1) + ' ใหม่ (ไม่นับแมตช์)">' + ic('shuffle') + 'สุ่มใหม่</button></div>';
     var p = A.winProb(RT, c.t);
     var h = '<section class="court">' + head;
@@ -798,7 +801,7 @@
     var clock = function (ms) { var d = new Date(ms); return d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); };
     var h = '<section class="board" aria-label="สรุปคืนนี้"><svg class="wm" aria-hidden="true"><use href="#i-shuttle"/></svg><div class="facts4">' +
       '<div class="fact"><span>แมตช์ที่จบ</span><b id="doneCount">' + S.done.length + '</b><small>กำลังเล่น ' + on + '/' + S.courts.length + ' สนาม</small></div>' +
-      '<div class="fact"><span>เวลาเล่น</span><b>' + (t0 ? hm : '–') + '</b><small>' + (t0 ? 'เริ่ม ' + clock(t0) + ' น.' : 'ยังไม่เริ่ม') + '</small></div>' +
+      '<div class="fact"><span>เวลาเล่น</span><b data-tick="hm" data-t="' + (t0 || '') + '">' + (t0 ? hm : '–') + '</b><small>' + (t0 ? 'เริ่ม ' + clock(t0) + ' น.' : 'ยังไม่เริ่ม') + '</small></div>' +
       '<div class="fact"><span>เกมต่อคน</span><b>' + (lo === hi ? lo : lo + '–' + hi) + '</b><small class="' + (fair ? 'ok' : 'warn') + '">' + (fair ? 'เท่ากันดี' : 'ต่างกัน ' + (hi - lo) + ' เกม') + '</small></div>' +
       '<div class="fact"><span>มาวันนี้</span><b>' + here.length + '</b><small>สนามละ 4 · พัก ' + sitting + ' คน</small></div></div>';
     h += '<div class="rest"><div class="rest-h"><b>พักตานี้</b><span>' + (sitting ? sitting + ' คน' + (q.length && !ui.restPick ? ' · แตะชื่อเพื่อสลับลงสนาม' : '') : '') + '</span>' +
@@ -826,7 +829,7 @@
       L.list.map(function (x) { return x.id; }).concat(L.held).forEach(function (id) {
         var pl = map[id], w = mins(pl.freeSince), isNext = nx.indexOf(id) >= 0, mate = heldSet[id] ? (S.rules || []).filter(function (r) { return r.kind === 'with' && (r.a === id || r.b === id); })[0] : null;
         h += '<button class="chip' + (isNext ? ' next' : '') + (heldSet[id] ? ' resting' : '') + (sameSel({ id: id }) ? ' sel' : '') + '" data-act="pickq" data-id="' + id + '">' + bird(RT.B[id], 'sm') +
-          '<span class="cn">' + esc(pl.name) + '</span><span class="cm">' + (st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น') + (w ? ' · ' + w + ' น.' : '') + '</span>' +
+          '<span class="cn">' + esc(pl.name) + '</span><span class="cm" data-tick="wait" data-t="' + (pl.freeSince || '') + '" data-pre="' + (st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น') + '">' + waitText(st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น', pl.freeSince) + '</span>' +
           (isNext ? '<span class="tag-next">ลงต่อ</span>' : mate ? '<span class="tag-rest">รอคู่</span>' : '') + '</button>';
       });
       h += '</div>';
@@ -1045,7 +1048,7 @@
 
     var end = '<div class="sblock"><button class="btn big' + (ui.confirm === 'end' ? ' danger' : ' primary') + '" data-act="end">' + ic('flag') + (ui.confirm === 'end' ? 'กดอีกครั้งเพื่อจบเกมวันนี้' : 'จบเกมวันนี้และเก็บสถิติ') + '</button>' +
       '<p class="muted small">บันทึกแมตช์และอันดับขึ้นระบบ ยก MMR ไปใช้ครั้งหน้า สนามที่ยังไม่บันทึกผลจะไม่ถูกนับ ต้องออนไลน์</p></div>' +
-      '<div class="srow"><div class="stext"><b>เริ่มเกมใหม่</b><span>ล้างแมตช์คืนนี้ และตั้ง MMR ทุกคนกลับตามระดับ กดย้อนกลับได้</span></div>' +
+      '<div class="srow"><div class="stext"><b>เริ่มเกมใหม่</b><span>ล้างแมตช์คืนนี้ MMR กลับไปเท่าตอนเริ่มคืน คืนก่อนๆ ไม่กระทบ กดย้อนกลับได้</span></div>' +
       '<button class="btn sm' + (ui.confirm === 'reset' ? ' danger' : '') + '" data-act="reset">' + ic('trash') + (ui.confirm === 'reset' ? 'กดอีกครั้ง' : 'รีเซ็ต') + '</button></div>';
 
     var look = '<div class="srow"><div class="stext"><b>สีของแอป</b><span>อัตโนมัติ = ตามที่ตั้งในเครื่อง</span></div>' + seg('สีของแอป', [['auto', 'อัตโนมัติ'], ['light', 'สว่าง'], ['dark', 'มืด']], themePref(), 'theme', 'v') + '</div>' +
@@ -1402,7 +1405,7 @@
       if (confirmTap('hdel' + di)) { S.done.splice(di, 1); S.adj.forEach(function (x) { if (x.at > di) x.at--; }); msg = 'ลบแมตช์ ' + (di + 1) + ' แล้ว'; }
     }
     else if (a === 'end') { if (confirmTap('end')) { endDay(); return; } }
-    else if (a === 'reset') { if (confirmTap('reset')) { A.resetGame(S); msg = 'เริ่มเกมใหม่แล้ว MMR กลับตามระดับ'; } }
+    else if (a === 'reset') { if (confirmTap('reset')) { A.resetGame(S); msg = 'ล้างคืนนี้แล้ว MMR กลับไปเท่าตอนเริ่มคืน'; } }
     if (msg) { toast(msg, snap); if (birdToast != null) { ui.toast.bird = birdToast; renderToast(); } }
     if (JSON.stringify(S) !== before) changed();
     render();
@@ -1506,9 +1509,13 @@
       }
     }
   });
+  /* clocks on the courts tab: update only the time texts, never re-render, so a tap that lands mid-update still hits its button */
   setInterval(function () {
-    var ae = document.activeElement;
-    if (S && ui.tab === 'play' && !ui.busy && !(ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName))) render();
+    if (!S || ui.tab !== 'play') return;
+    document.querySelectorAll('[data-tick]').forEach(function (el) {
+      var t = +el.dataset.t || 0, k = el.dataset.tick;
+      el.textContent = k === 'court' ? courtAge(t) : k === 'hm' ? (t ? hmSince(t) : '–') : waitText(el.dataset.pre, t);
+    });
   }, 30000);
   boot();
 })();

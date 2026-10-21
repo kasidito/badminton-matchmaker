@@ -48,14 +48,20 @@ async function run(browser, base, label, viewport, scheme, seed) {
     for (let t = 0; t < 2; t++) {
       const els = []; for (const el of await page.$$(sel)) if (await el.isVisible().catch(() => false)) els.push(el);
       if (!els.length) return false;
-      try { const el = els[Math.floor(R() * els.length)]; await el.evaluate(e => e.scrollIntoView({ block: 'center' })); await el.click({ timeout: 3000 }); return true; } catch (e) { if (/intercepts pointer events/.test(e.message)) { blocked++; return false; } if (!/not attached|detached/.test(e.message)) throw e; }
+      const el = els[Math.floor(R() * els.length)];
+      try { await el.evaluate(e => e.scrollIntoView({ block: 'center' })); await el.click({ timeout: 3000 }); return true; } catch (e) {
+        if (/intercepts pointer events/.test(e.message)) { blocked++; return false; }
+        // the page re-rendered between finding and clicking (a removed node reports "not visible"): look again
+        if (/not attached|detached/.test(e.message) || !(await el.evaluate(n => n.isConnected).catch(() => false))) continue;
+        throw e;
+      }
     }
     return false;
   };
   const tab = async t => { if (!(await page.$(`.tab.on[data-tab=${t}]`))) await page.click(`[data-tab=${t}]`); };
   let violations = 0, saves = 0, blocked = 0;   // blocked = a toast or the bottom menu sat on the target; a person would scroll or wait
   const actions = [
-    ['save', 6, async () => { await tab('play'); const c = await page.$$('[data-act=win]'); if (!c.length) return; await c[Math.floor(R() * c.length)].click(); if (await clickIf('[data-act=save]')) saves++; }],
+    ['save', 6, async () => { await tab('play'); if (!(await clickIf('[data-act=win]'))) return; if (await clickIf('[data-act=save]')) saves++; }],
     ['fill', 4, async () => { await tab('play'); await clickIf('[data-act=fill]:not([disabled])'); }],
     ['draw', 2, async () => { await tab('play'); await clickIf('[data-act=draw]'); }],
     ['redraw', 2, async () => { await tab('play'); await clickIf('[data-act=redraw]'); }],

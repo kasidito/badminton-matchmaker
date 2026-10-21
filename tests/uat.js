@@ -209,10 +209,11 @@ async function signIn(p, email, pw) {
   await p.click('[data-tab=people]');
   item(8, 'A new night starts with nobody checked in', !(await S(p)).players.some(x => x.active));
   await p.click('#setBtn');
+  const carried = (await S(p)).players.map(x => x.start);
   await p.click('[data-act=reset]'); await p.click('[data-act=reset]');
-  item(8, 'เริ่มเกมใหม่ resets ratings to the starting birds', (await S(p)).players.every(x => x.start === { B: 1200, N: 1350, I: 1500, A: 1650, P: 1800 }[x.level || 'I']));
+  item(8, 'เริ่มเกมใหม่ clears tonight only and keeps MMR carried from earlier nights', JSON.stringify((await S(p)).players.map(x => x.start)) === JSON.stringify(carried) && (await S(p)).done.length === 0);
   await p.click('#undoBtn');
-  item(8, 'and undo brings them back', (await S(p)).players.some(x => x.start !== { B: 1200, N: 1350, I: 1500, A: 1650, P: 1800 }[x.level || 'I']));
+  item(8, 'and undo brings tonight back', (await S(p)).players.length === carried.length);
 
   /* 9. Layout */
   await p.click('[data-tab=people]'); await p.click('[data-act=checkall]'); await p.click('[data-tab=play]'); await p.click('.fill-inline');
