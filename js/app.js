@@ -303,7 +303,7 @@
     ui.club = { id: club.id, name: club.name };
     DB.setClub(club.id);
     try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (e) { }
-    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.notInPost = null; ui.allStats = null; ui.statId = null; ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
+    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.allStats = null; ui.statId = null; ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
     sync.dirty = false;
     var cache = readCache();
     try {
@@ -714,14 +714,6 @@
       });
       h += '</div>';
     }
-    var outP = (ui.notInPost || []).map(function (id) { return A.findP(S, id); }).filter(function (p) { return p && p.active; });
-    if (outP.length) {
-      h += '<div class="card span outcard"><h2>ไม่อยู่ในโพสต์นี้ (' + outP.length + ')</h2><p class="muted small">เช็กอินไว้ก่อนหน้า แต่ไม่มีชื่อในโพสต์ที่เพิ่งวาง ถ้าไม่มาแล้ว กดเอาออกจากคืนนี้ (ยังเป็นสมาชิกอยู่)</p>';
-      outP.forEach(function (p) {
-        h += '<div class="outrow"><b>' + esc(p.name) + '</b><button class="btn sm" data-act="out-one" data-id="' + p.id + '">' + ic('x') + 'เอาออก</button></div>';
-      });
-      h += '<div class="askbtns" style="margin-top:8px">' + (outP.length > 1 ? '<button class="btn sm primary" data-act="out-all">' + ic('x') + 'เอาออกทั้งหมด</button>' : '') + '<button class="btn sm" data-act="out-keep">' + ic('check') + 'ให้อยู่ต่อ</button></div></div>';
-    }
     if (fresh.length) {
       h += '<div class="card span newcard"><div class="line"><h2>เลือกยศตั้งต้นให้คนใหม่ (' + fresh.length + ')</h2><button class="btn sm primary" data-act="new-done">' + ic('check') + 'เสร็จ</button></div>' +
         '<p class="muted small">เลือกนกที่ใกล้ฝีมือที่สุดเป็นจุดเริ่ม หลังจากนั้นยศขึ้นลงตามผลแข่ง ฟีนิกซ์ต้องไต่ขึ้นไปเอง</p>';
@@ -736,7 +728,7 @@
     h += '<div class="card"><h2>เช็กอินวันนี้</h2><form class="add" id="addForm" autocomplete="off">' +
       '<textarea id="nameIn" rows="3" placeholder="วางโพสต์ลงชื่อจากไลน์ได้ทั้งโพสต์" aria-label="รายชื่อ"></textarea>' +
       '<button class="btn primary" type="submit">' + ic('plus') + 'เช็กอิน</button>' +
-      '<p class="muted small">สมาชิกเดิมถูกเช็กอิน ชื่อใหม่ถูกเพิ่มเป็นสมาชิก ตั้งจำนวนสนามจากคำว่า "3 สนาม" และถามก่อนเอาคนที่ไม่อยู่ในโพสต์ออก</p></form></div>';
+      '<p class="muted small">วางโพสต์ที่มีเลข 1. 2. 3. ระบบตั้งคนที่มาให้ตรงกับโพสต์ เพิ่มชื่อใหม่ และตั้งจำนวนสนามให้ (กดย้อนกลับได้)</p></form></div>';
     h += '<div class="card"><div class="line"><h2>มาวันนี้ (' + here.length + ')</h2>' + (here.length ? '<button class="btn sm ghost" data-act="checknone">ยกเลิกทั้งหมด</button>' : '') + '</div>';
     if (!here.length) h += '<p class="muted small">ยังไม่มีใครเช็กอิน วางโพสต์ด้านบน หรือเปิดสวิตช์ในรายชื่อ "ยังไม่มา"</p>';
     here.forEach(function (p) { h += memberRow(p, st, RT, on); });
@@ -1017,16 +1009,22 @@
     if (courts && courts !== S.courts.length && !S.done.length && !S.live.some(Boolean)) {
       A.setCourtCount(S, courts); courtMsg = ' · ตั้ง ' + courts + ' สนามตามโพสต์';
     }
-    // a numbered post is the whole list: ask about people checked in earlier who are not in it (never on court)
-    var onCourt = A.liveIds(S), out = [];
+    // a numbered post is the whole list for the night: uncheck everyone not in it (undo restores them).
+    // People on court stay; near-spelling matches waiting for an answer stay.
+    var onCourt = A.liveIds(S), outMsg = '', outSnap = null;
     if (A.isRoster(text)) {
-      out = S.players.filter(function (p) { return p.active && !seen[p.id] && onCourt.indexOf(p.id) < 0 && (ui.newIds || []).indexOf(p.id) < 0; })
-        .map(function (p) { return p.id; });
-      ui.notInPost = out.length ? out : null;
+      var outs = S.players.filter(function (p) { return p.active && !seen[p.id] && (ui.newIds || []).indexOf(p.id) < 0; });
+      var gone = outs.filter(function (p) { return onCourt.indexOf(p.id) < 0; }), playing = outs.filter(function (p) { return onCourt.indexOf(p.id) >= 0; });
+      if (gone.length) {
+        outSnap = JSON.stringify(S);
+        gone.forEach(function (p) { setActive(p.id, false); });
+        outMsg = ' · เอาออก ' + gone.length + ' คนที่ไม่อยู่ในโพสต์ (' + gone.map(function (p) { return p.name; }).join(', ') + ')';
+      }
+      if (playing.length) outMsg += ' · ' + playing.map(function (p) { return p.name; }).join(', ') + ' ยังอยู่ในสนาม ไม่ได้เอาออก';
     }
     changed();
-    toast('เช็กอิน ' + checked + ' คน · เพิ่มใหม่ ' + added + ' คน' + courtMsg + (out.length ? ' · ' + out.length + ' คนไม่อยู่ในโพสต์ ดูด้านบน' : '') + (asked ? ' · มีชื่อคล้ายคนเดิม ' + asked + ' ชื่อ ช่วยยืนยันด้านบน' : '') +
-      (offline ? ' · ออฟไลน์อยู่ จะบันทึกคนใหม่เมื่อต่อเน็ต' : '') + (failed.length ? ' · เพิ่มไม่ได้: ' + failed.join(', ') : ''), null);
+    toast('เช็กอิน ' + checked + ' คน · เพิ่มใหม่ ' + added + ' คน' + courtMsg + outMsg + (asked ? ' · มีชื่อคล้ายคนเดิม ' + asked + ' ชื่อ ช่วยยืนยันด้านบน' : '') +
+      (offline ? ' · ออฟไลน์อยู่ จะบันทึกคนใหม่เมื่อต่อเน็ต' : '') + (failed.length ? ' · เพิ่มไม่ได้: ' + failed.join(', ') : ''), outSnap);
     render();
   }
   /* answer for one "ใช่คนเดิมไหม" question: same person (remember the spelling) or a new member */
@@ -1206,9 +1204,6 @@
     else if (a === 'restpick') { ui.restPick = !ui.restPick; ui.sel = null; }
     else if (a === 'rest') { var rp = A.findP(S, +t.dataset.id); if (rp && A.toggleRest(S, rp.id)) msg = rp.rest ? rp.name + ' ขอพัก 1 ตา' : rp.name + ' กลับเข้าคิวแล้ว'; }
     else if (a === 'new-done') { ui.newIds = []; }
-    else if (a === 'out-one') { var op = A.findP(S, +t.dataset.id); if (op) { setActive(op.id, false); msg = 'เอา ' + op.name + ' ออกจากคืนนี้แล้ว'; } ui.notInPost = (ui.notInPost || []).filter(function (x) { return x !== +t.dataset.id; }); }
-    else if (a === 'out-all') { var on = 0; (ui.notInPost || []).forEach(function (id) { var q = A.findP(S, id); if (q && q.active && A.liveIds(S).indexOf(id) < 0) { setActive(id, false); on++; } }); ui.notInPost = null; msg = 'เอาออกจากคืนนี้ ' + on + ' คน'; }
-    else if (a === 'out-keep') { ui.notInPost = null; }
     else if (a === 'edit-player-cancel') ui.editPlayer = null;
     else if (a === 'theme') { setTheme(t.dataset.v); }
     else if (a === 'admin-reset') { ui.resetId = t.dataset.id; }

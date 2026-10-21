@@ -53,20 +53,19 @@ const viewText = page => page.textContent('#view');
   await page.waitForSelector('#toast:not([hidden])');
   check('check-in 10 from a numbered list', (await page.textContent('#toast')).includes('เช็กอิน 10'));
 
-  // a numbered post is the whole list: people checked in earlier but missing from it are asked about, not dropped silently
-  await page.fill('#nameIn', '1. ชิน\n2. โฟล์ค\n3. \n----\nถอนชื่อหลังอังคาร');
+  // a numbered post is the whole list: pasting it again without ภู takes ภู out (one undo step)
+  const checkedCount = () => page.$$eval('.row input[data-act=toggle]:checked', e => e.length);
+  await page.fill('#nameIn', 'พุธ 21 ตค 20:00 - 22:00\n1. ชิน\n2. โฟล์ค\n3. เดือน\n4. นัทซ้าย\n5. เปตอง\n6. ป๊อป\n7. Ard\n8. \n9. กร\n10. ตรัย\n14.\n------\nถอนชื่อหลังอังคารเที่ยง');
   await page.click('#addForm button[type=submit]');
-  await page.waitForSelector('[data-act=out-one]');
-  check('post without ภู asks about the 8 missing names', (await page.textContent('#toast')).includes('8 คนไม่อยู่ในโพสต์') && (await page.$$('[data-act=out-one]')).length === 8);
-  check('nobody is removed until the admin says so', (await page.$$eval('.row input[data-act=toggle]:checked', e => e.length)) === 10);
-  await page.click('[data-act=out-one][data-id="8"]');
-  check('เอาออก unchecks only that person', !(await page.isChecked('input[data-act=toggle][data-id="8"]')) && (await page.$$('[data-act=out-one]')).length === 7);
-  await page.click('[data-act=out-keep]');
-  check('ให้อยู่ต่อ closes the card and keeps the rest', !(await page.$('[data-act=out-one]')) && (await page.$$eval('.row input[data-act=toggle]:checked', e => e.length)) === 9);
-  await page.fill('#nameIn', 'ภู');
-  await page.click('#addForm button[type=submit]');
+  await page.waitForFunction(() => !document.querySelector('input[data-act=toggle][data-id="8"]').checked);
+  check('numbered post sets who is here: ภู not in it is taken out', (await checkedCount()) === 9 && (await page.textContent('#toast')).includes('เอาออก 1 คนที่ไม่อยู่ในโพสต์ (ภู)'));
+  await page.click('#toast [data-act=undo]');
   await page.waitForFunction(() => document.querySelector('input[data-act=toggle][data-id="8"]').checked);
-  check('a plain (unnumbered) list never asks to remove anyone', !(await page.$('[data-act=out-one]')));
+  check('undo brings ภู back', (await checkedCount()) === 10);
+  await page.fill('#nameIn', 'ชิน');
+  await page.click('#addForm button[type=submit]');
+  await page.waitForSelector('#toast:not([hidden])');
+  check('a plain (unnumbered) list only adds, never takes anyone out', (await checkedCount()) === 10);
 
   await page.selectOption('select[data-id="2"]', 'A');
   await page.selectOption('select[data-id="10"]', 'N');
@@ -148,7 +147,7 @@ const viewText = page => page.textContent('#view');
 
   // rank edit
   await page.click('[data-tab=rank]');
-  await page.click('[data-act=edit-mmr][data-id="1"]');
+  await page.click('.rklist [data-act=edit-mmr]');   // any listed player (who was checked out above is random)
   await page.fill('#mmrIn', '1800');
   await page.click('#mmrForm button[type=submit]');
   await saved(page);
@@ -493,7 +492,7 @@ const viewText = page => page.textContent('#view');
   await p2.click('#ruleForm button[type=submit]');
   await p2.waitForSelector('[data-act=rule-del] >> nth=1');
   check('pair rules are saved for the club', (await db(p2)).pair_rules.length === 2 && (await viewText(p2)).includes('เล่นคู่กันเสมอ'));
-  await p2.click('[data-act=checkall]').catch(() => {});
+  await p2.evaluate(() => { const b = document.querySelector('[data-act=checkall]'); if (b) b.click(); });
   await p2.click('[data-tab=play]');
   await p2.evaluate(() => { const b = document.querySelector('[data-act=fill]:not([disabled])'); if (b) b.click(); });
   await p2.waitForTimeout(200);
@@ -547,4 +546,4 @@ const viewText = page => page.textContent('#view');
   results.forEach(r => { if (!r.ok) failed++; console.log((r.ok ? 'ok   ' : 'FAIL ') + r.name + (r.ok || r.detail == null ? '' : '  -> ' + r.detail)); });
   console.log(`\n${results.length - failed}/${results.length} passed`);
   process.exit(failed ? 1 : 0);
-})().catch(e => { console.error(e); server.close(); process.exit(1); });
+})().catch(e => { results.forEach(r => console.log((r.ok ? "ok   " : "FAIL ") + r.name + (r.ok || r.detail == null ? "" : "  -> " + r.detail))); console.error(e); server.close(); process.exit(1); });
