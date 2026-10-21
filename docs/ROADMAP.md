@@ -11,7 +11,7 @@ Status as of 21 Oct 2026, 10:30. Owner decides order; update this file when some
 | 3 | Run `docs/UAT.md` on the iPad and the phone; report issues | Owner | Waiting |
 | 4 | Add a second admin to ก๊วนแบด as a backup (forgot-password emails only reach Supabase team members) | Owner | Suggested |
 | 5 | Optional: leaked password protection (Supabase advisor; needs a paid plan) | Owner | Optional |
-| 6 | Run `20261021090000_openskill_aliases_club_tools.sql` in the SQL editor (sent as budmintan-openskill.sql) | Owner | Waiting |
+| 6 | Run `20261021090000_openskill_aliases_club_tools.sql` in the SQL editor | Owner | Done 21 Oct |
 
 ## Shipped (20–21 Oct)
 
