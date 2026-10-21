@@ -396,7 +396,9 @@ body.board .cname{font-size:1.4rem}
 @media (prefers-reduced-motion:reduce){.sdetails summary .ico{transition:none}}
 
 /* "ชื่อนี้ใช่คนเดิมไหม" */
-.askcard{border:2px solid var(--hi)}
+.askcard,.outcard{border:2px solid var(--hi)}
+.outrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.outrow b{font-size:1.05rem}
 .askrow{display:grid;gap:8px;padding:10px 0;border-top:1px solid var(--line)}
 .askrow b{font-size:1.05rem}
 .askbtns{display:flex;flex-wrap:wrap;gap:8px}

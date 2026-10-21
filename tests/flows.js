@@ -53,6 +53,21 @@ const viewText = page => page.textContent('#view');
   await page.waitForSelector('#toast:not([hidden])');
   check('check-in 10 from a numbered list', (await page.textContent('#toast')).includes('เช็กอิน 10'));
 
+  // a numbered post is the whole list: people checked in earlier but missing from it are asked about, not dropped silently
+  await page.fill('#nameIn', '1. ชิน\n2. โฟล์ค\n3. \n----\nถอนชื่อหลังอังคาร');
+  await page.click('#addForm button[type=submit]');
+  await page.waitForSelector('[data-act=out-one]');
+  check('post without ภู asks about the 8 missing names', (await page.textContent('#toast')).includes('8 คนไม่อยู่ในโพสต์') && (await page.$$('[data-act=out-one]')).length === 8);
+  check('nobody is removed until the admin says so', (await page.$$eval('.row input[data-act=toggle]:checked', e => e.length)) === 10);
+  await page.click('[data-act=out-one][data-id="8"]');
+  check('เอาออก unchecks only that person', !(await page.isChecked('input[data-act=toggle][data-id="8"]')) && (await page.$$('[data-act=out-one]')).length === 7);
+  await page.click('[data-act=out-keep]');
+  check('ให้อยู่ต่อ closes the card and keeps the rest', !(await page.$('[data-act=out-one]')) && (await page.$$eval('.row input[data-act=toggle]:checked', e => e.length)) === 9);
+  await page.fill('#nameIn', 'ภู');
+  await page.click('#addForm button[type=submit]');
+  await page.waitForFunction(() => document.querySelector('input[data-act=toggle][data-id="8"]').checked);
+  check('a plain (unnumbered) list never asks to remove anyone', !(await page.$('[data-act=out-one]')));
+
   await page.selectOption('select[data-id="2"]', 'A');
   await page.selectOption('select[data-id="10"]', 'N');
   await saved(page);

@@ -149,6 +149,9 @@ test('reads the number of courts from a LINE post', () => {
   assert.strictEqual(A.parseCourts('พุธ 21 ตค 20:00 - 22:00  3 สนาม\n1. ชิน'), 3);
   assert.strictEqual(A.parseCourts('ศุกร์ 2สนาม'), 2);
   assert.strictEqual(A.parseCourts('1. ชิน\n2. ตาล'), null);
+  assert.ok(A.isRoster('พุธ 3 สนาม\n1. ชิน\n2. ตาล\n3.'));
+  assert.ok(!A.isRoster('ชิน\nตาล'));
+  assert.ok(!A.isRoster('1. ชิน'));
 });
 
 test('bird ranks: promote at the floor, drop only after falling 25 below it', () => {

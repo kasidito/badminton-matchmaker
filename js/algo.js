@@ -389,6 +389,11 @@
       .filter(function (s) { return s && /[A-Za-z฀-๿À-ɏ぀-ヿ一-鿿]/.test(s); });
   }
 
+  /* A numbered sign-up post ("1. ชิน", "2. โฟล์ค") is the full list for the night. */
+  function isRoster(text) {
+    return String(text).split(/\r?\n/).filter(function (l) { return /^\s*\d+\s*[.)]/.test(l); }).length >= 2;
+  }
+
   /* "พุธ 21 ตค 20:00 - 22:00  3 สนาม" -> 3. Returns null when the post does not say. */
   function parseCourts(text) {
     var m = String(text).match(/(\d{1,2})\s*สนาม/);
@@ -403,7 +408,7 @@
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,
     setCourtCount: setCourtCount, minCredit: minCredit, daySnapshot: daySnapshot, carryForward: carryForward,
-    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts
+    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts, isRoster: isRoster
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Algo;
   else root.Algo = Algo;
