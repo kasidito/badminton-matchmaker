@@ -73,7 +73,7 @@ Tester: ______  Date: ______  Device: ______
 - [ ] iPad portrait: bottom menu, nothing scrolls sideways on any tab
 - [ ] Phone: bottom menu, nothing scrolls sideways on any tab
 - [ ] Phone dark: bottom menu, nothing scrolls sideways on any tab
-- [ ] Board mode shows big names and hides every button on the courts
+- [ ] The sun/moon button in the header switches light and dark
 - [ ] Add to Home Screen shows the Budmintan icon and opens full screen
 
 ## Clubs, admins and pair rules

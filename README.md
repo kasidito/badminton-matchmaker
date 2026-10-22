@@ -21,7 +21,7 @@ Built for one admin on an iPad or phone at the court. Players do not log in.
 - **Backups**: Settings → ดาวน์โหลดข้อมูลทั้งหมด saves every table as a JSON file.
 - **Password**: forgot-password email and change-password in Settings.
 - **Works offline**: every change is kept on the device and saved to Supabase as soon as the connection is back. The header shows the save status.
-- **iPad layouts** for portrait and landscape, plus a big-text board mode for a screen beside the court.
+- **iPad layouts** for portrait and landscape; a sun/moon button in the header switches light and dark.
 
 ## Using it
 

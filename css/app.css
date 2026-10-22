@@ -277,13 +277,8 @@ h2.big{font-size:1.15rem}
 }
 
 /* board mode: big read-only display */
-body.board .court-actions,body.board .won,body.board .restbtn,body.board .slot .btn,body.board .redraw,body.board .dock,body.board .selbar,body.board .toast,body.board .fill-inline{display:none!important}
-body.board .pl{font-size:1.6rem;pointer-events:none}
-body.board .chip,body.board .modechip{pointer-events:none}
-body.board .cname{font-size:1.4rem}
 @media (max-width:360px){.match{grid-template-columns:1fr}.vs{height:26px}.vs::before{top:50%;bottom:auto;left:6px;right:6px;width:auto;height:3px;margin:-1.5px 0 0}}
 @media (max-width:420px){.hicons{gap:6px}.hicons .hbtn{width:40px;height:40px}.tab{font-size:.8rem;gap:3px}.tab .ico{width:1.05em;height:1.05em}}
-@media (max-width:699px){#boardBtn{display:none}}
 @media (prefers-reduced-motion:reduce){.track,.track::after,.team{transition:none}}
 
 /* sign-in and status screens */
@@ -429,7 +424,6 @@ body.board .cname{font-size:1.4rem}
 /* optional score on a team card */
 .scin{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;padding-inline:6px;font-size:.74rem;color:var(--team-muted)}
 .scin input{width:3.6em;min-height:36px;border-radius:10px;border:1.5px solid var(--line-strong);background:var(--field);color:var(--fg);text-align:center;font:700 1rem var(--font-display);padding:0 4px}
-body.board .scin{display:none}
 
 /* pair rules */
 .ruleform{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)}
@@ -477,7 +471,6 @@ b.down{color:var(--down)}
 .modalbox{background:var(--surface);color:var(--fg);border-radius:22px;padding:16px;display:grid;gap:10px;justify-items:center;width:min(100%,420px);max-height:calc(100dvh - 32px);overflow:auto}
 .cardimg{width:100%;height:auto;border-radius:14px;display:block}
 .modalbox .acts{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
-body.board .h2h,body.board .modal{display:none}
 a.btn{text-decoration:none}
 
 /* ---------- tap targets: 44 px minimum for everything an admin taps courtside ---------- */
@@ -511,3 +504,6 @@ label.sw,.modechip{isolation:isolate}
 .pl{display:flex;flex-wrap:wrap;align-items:center;column-gap:6px}
 .pl .bird{margin-right:0}
 .pl .bird{width:30px;height:30px}
+/* small phones: four header buttons (sync, undo, theme, settings) leave less room for the brand */
+.brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:400px){.brand{gap:8px}.brand h1{font-size:1.05rem}.top .brand .logo{width:34px;height:34px}.hicons{gap:5px}}

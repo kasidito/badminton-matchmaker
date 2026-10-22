@@ -219,12 +219,18 @@ const viewText = page => page.textContent('#view');
   check('second tap deletes the match and DB follows', (await db(page)).matches.length === before - 1);
   check('summary fits on a phone', await noSideScroll(page));
 
-  // board mode hides controls
+  // header sun/moon button flips the theme; Settings keeps อัตโนมัติ
   await page.click('[data-tab=play]');
-  check('board-mode icon is not shown on a phone (it is in Settings)', !(await page.isVisible('#boardBtn')));
-  await page.click('#setBtn'); await page.click('label:has([data-act=boardsw]) .track'); await page.click('[data-tab=play]');
-  check('board mode hides court buttons', !(await page.isVisible('.court-actions')) && !(await page.isVisible('[data-act=win]')) && !(await page.isVisible('#dock')));
-  await page.click('#setBtn'); await page.click('label:has([data-act=boardsw]) .track'); await page.click('[data-tab=play]');
+  check('theme button sits between undo and settings', await page.evaluate(() => { const ids = [...document.querySelectorAll('.hicons > *')].map(e => e.id); return ids.indexOf('themeBtn') === ids.indexOf('undoBtn') + 1 && ids.indexOf('setBtn') === ids.indexOf('themeBtn') + 1; }));
+  const bgBefore = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.click('#themeBtn');
+  const after = await page.evaluate(() => [document.documentElement.getAttribute('data-theme'), getComputedStyle(document.body).backgroundColor]);
+  check('tapping it switches light and dark', after[0] === 'dark' && after[1] !== bgBefore, JSON.stringify(after));
+  check('the icon turns into a sun in dark mode', (await page.getAttribute('#themeBtn use', 'href')) === '#i-sun');
+  await page.click('#themeBtn');
+  check('tapping again goes back to light', (await page.evaluate(() => document.documentElement.getAttribute('data-theme'))) === 'light');
+  check('board mode is gone', !(await page.$('#boardBtn')) && !(await page.$('[data-act=boardsw]')));
+  await page.click('#setBtn'); await page.click('[data-act=theme][data-v=auto]'); await page.click('[data-tab=play]');
 
   // session closed elsewhere (another device ended the night)
   await page.evaluate(() => { const s = window.__fakeDb().sessions.find(x => x.status === 'open'); s.status = 'closed'; localStorage.setItem('fake-supabase-db', JSON.stringify(window.__fakeDb())); });

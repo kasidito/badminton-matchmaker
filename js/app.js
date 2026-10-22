@@ -259,7 +259,7 @@
     else {
       var modes = session ? session.court_modes : (cache ? cache.S.courts.map(function (c) { return c.mode; }) : ['normal', 'normal', 'normal']);
       st = { v: 4, players: [], courts: modes.map(function (m) { return { mode: m }; }), live: [], done: [], adj: [],
-        flex: session ? session.flex : (cache ? (cache.S.flex || 0) : 4), board: cache ? !!cache.S.board : false };
+        flex: session ? session.flex : (cache ? (cache.S.flex || 0) : 4) };
     }
     st.sessionId = sid;
     st.title = session ? session.title : null;
@@ -431,7 +431,20 @@
   function setTheme(v) {
     try { if (v === 'auto') localStorage.removeItem('bmm-theme'); else localStorage.setItem('bmm-theme', v); } catch (e) { }
     if (v === 'light' || v === 'dark') document.documentElement.setAttribute('data-theme', v); else document.documentElement.removeAttribute('data-theme');
+    renderThemeBtn();
   }
+  /* the header sun/moon button flips between light and dark (Settings still offers อัตโนมัติ) */
+  function themeNow() {
+    var t = document.documentElement.getAttribute('data-theme');
+    if (t) return t;
+    try { return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch (e) { return 'light'; }
+  }
+  function renderThemeBtn() {
+    var b = $('themeBtn'); if (!b) return;
+    var dark = themeNow() === 'dark', label = dark ? 'เปลี่ยนเป็นโหมดสว่าง' : 'เปลี่ยนเป็นโหมดมืด';
+    b.innerHTML = ic(dark ? 'sun' : 'moon'); b.setAttribute('aria-label', label); b.title = label;
+  }
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderThemeBtn); } catch (e) { }
 
   /* ---------- LINE summary: plain text, no emojis, posted through the share sheet (or copied) ---------- */
   function dayText(day) {
@@ -1091,7 +1104,6 @@
       '<button class="btn sm' + (ui.confirm === 'reset' ? ' danger' : '') + '" data-act="reset">' + ic('trash') + (ui.confirm === 'reset' ? 'กดอีกครั้ง' : 'รีเซ็ต') + '</button></div>';
 
     var look = '<div class="srow"><div class="stext"><b>สีของแอป</b><span>อัตโนมัติ = ตามที่ตั้งในเครื่อง</span></div>' + seg('สีของแอป', [['auto', 'อัตโนมัติ'], ['light', 'สว่าง'], ['dark', 'มืด']], themePref(), 'theme', 'v') + '</div>' +
-      '<div class="srow"><div class="stext"><b>โหมดจอใหญ่</b><span>ตัวใหญ่ ซ่อนปุ่ม ไว้วางโชว์ข้างสนาม</span></div><label class="sw"><input type="checkbox" data-act="boardsw"' + (S.board ? ' checked' : '') + ' aria-label="โหมดจอใหญ่"><span class="track"></span></label></div>' +
       '<div class="srow"><div class="stext"><b>จอไม่ดับระหว่างเล่น</b><span>' + ('wakeLock' in navigator ? 'เปิดค้างไว้ตอนแอปอยู่หน้าจอ ปิดแอปแล้วจอดับตามปกติ' : 'เครื่องนี้ยังไม่รองรับ (iPhone/iPad ต้อง iOS 18.4 ขึ้นไป และเปิดจากไอคอนบนหน้าจอโฮม)') + '</span></div><label class="sw"><input type="checkbox" data-act="wakesw"' + (wakeWanted() ? ' checked' : '') + ' aria-label="จอไม่ดับระหว่างเล่น"><span class="track"></span></label></div>';
 
     var account = '<div class="srow"><div class="stext"><b>' + esc(ui.user && ui.user.email || '') + '</b><span>เข้าสู่ระบบอยู่</span></div><button class="btn sm" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
@@ -1129,7 +1141,7 @@
     var el = $('toast');
     if (!ui.toast) { el.hidden = true; el.innerHTML = ''; return; }
     el.hidden = false;
-    el.classList.toggle('lift', ui.tab === 'play' && !S.board);
+    el.classList.toggle('lift', ui.tab === 'play');
     el.classList.toggle('promo', ui.toast.bird != null);
     el.innerHTML = (ui.toast.bird != null ? bird(ui.toast.bird, 'md') : '') + '<span class="tmsg">' + esc(ui.toast.msg) + '</span>' + (ui.toast.undo ? '<button data-act="undo">' + ic('undo') + 'ย้อนกลับ</button>' : '');
   }
@@ -1155,8 +1167,7 @@
   function render() {
     if (!S) return;
     var v = $('view'), dock = $('dock');
-    document.body.classList.toggle('board', !!S.board);
-    $('boardBtn').classList.toggle('on', !!S.board);
+    renderThemeBtn();
     $('setBtn').classList.toggle('on', ui.tab === 'set');
     document.querySelectorAll('.tab').forEach(function (b) { var on = b.dataset.tab === ui.tab; b.classList.toggle('on', on); if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     v.innerHTML = ui.tab === 'play' ? viewPlay() : ui.tab === 'people' ? viewPeople() : ui.tab === 'rank' ? viewRank() : ui.tab === 'sum' ? viewSummary() : viewSettings();
@@ -1361,7 +1372,7 @@
     if (a !== 'undo' && a !== 'tab') ui.toast = null;
     if (a === 'tab') { ui.tab = t.dataset.tab; ui.confirm = null; ui.editId = null; ui.sel = null; ui.editMembers = false; ui.editPlayer = null; ui.resetId = null; ui.restPick = false; try { window.scrollTo(0, 0); } catch (x) { } }
     else if (a === 'sync') { if (sync.dirty) runSync(); }
-    else if (a === 'board') { S.board = !S.board; ui.sel = null; }
+    else if (a === 'theme-toggle') { setTheme(themeNow() === 'dark' ? 'light' : 'dark'); renderThemeBtn(); return; }
     else if (a === 'undo') {
       var step = ui.undos.pop();
       if (step) {
@@ -1462,7 +1473,6 @@
     else if (a === 'level') {
       setLevel(+t.dataset.id, t.value);
     }
-    else if (a === 'boardsw') S.board = t.checked;
     else if (a === 'wakesw') { setWake(t.checked); render(); return; }
     else if (a === 'h2h') { ui.h2h = ui.h2h || [null, null]; ui.h2h[+t.dataset.i] = t.value ? +t.value : null; render(); return; }
     else if (a === 'score') {

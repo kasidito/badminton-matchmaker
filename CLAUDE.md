@@ -48,7 +48,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
   adj:     [{ at, id, to }],                                   // manual MMR edits
   rules:   [{ id, a, b, kind: 'with'|'apart' }],              // club pair rules, loaded from pair_rules
   days:    [...],                                              // past nights, loaded from DB, never synced
-  flex, board
+  flex
 }
 ```
 
@@ -104,6 +104,7 @@ When you change `sync_session`/`close_session`, update `tests/fake-supabase.js` 
 - Rank rows use `.podium`, not `.top` (`.top` is the header).
 - Look is design C "sports club app" (chosen Oct 2026): font Prompt, navy ink `--accent`, lime `--hi`. Light: pale page, white cards, navy gradient `--banner` (`.board`, `.strip`, `.hero`) and `--panel` (court) with white team cards. Dark: navy surfaces. Owner asked for **no stripes anywhere**.
 - App name shown in the UI is **Budmintan** (header, login, home-screen name).
-- Theme: Settings → สีของแอป (auto / light / dark), stored per device in localStorage `bmm-theme`, applied by a tiny inline script in `<head>` as `html[data-theme]`.
+- Theme: Settings → สีของแอป (auto / light / dark), stored per device in localStorage `bmm-theme`, applied by a tiny inline script in `<head>` as `html[data-theme]`. The header sun/moon button (`#themeBtn`, between undo and settings) flips light/dark directly.
+- Board mode (big text, hidden buttons) was removed on 22 Oct 2026 at the owner's request: without live sync between devices it had no use. An old `S.board` in a stored state is ignored.
 - Phone and tablet portrait: the menu (`.tabs`) is a floating pill fixed at the bottom; the courts dock sits above it. From 1000px the menu moves into the header.
 - Court: header row (name, mode chip, time, `.redraw` สุ่มใหม่), then the `.match` panel: two `.team` cards split by the net with a lime VS; each team card has its own `.won` (ทีมนี้ชนะ) button, as in the owner's light mockup. บันทึกผล appears under the panel once a winner is picked.

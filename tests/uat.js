@@ -232,10 +232,9 @@ async function signIn(p, email, pw) {
     await shot(p, 'uat-' + label.replace(/\s/g, '-').toLowerCase());
   }
   await p.setViewportSize({ width: 1180, height: 820 }); await p.emulateMedia({ colorScheme: 'light' });
-  await p.click('[data-act=board]');
-  const bigName = await p.$eval('.pl', e => parseFloat(getComputedStyle(e).fontSize));
-  item(9, 'Board mode shows big names and hides every button on the courts', bigName >= 24 && !(await p.isVisible('[data-act=win]')) && !(await p.isVisible('.redraw')) && !(await p.isVisible('[data-act=restpick]')) && !(await p.isVisible('.scin')));
-  await p.click('[data-act=board]');
+  await p.click('#themeBtn');
+  item(9, 'The sun/moon button in the header switches light and dark', (await p.evaluate(() => document.documentElement.getAttribute('data-theme'))) === 'dark');
+  await p.click('#themeBtn');
   item(9, 'Add to Home Screen shows the Budmintan icon and opens full screen', null, 'needs the real iPad / iPhone');
 
   /* 10. Clubs, admins, pair rules */
