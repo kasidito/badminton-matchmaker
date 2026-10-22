@@ -11,7 +11,7 @@
     { k: 'pigeon', name: 'นกพิราบ', min: 1425 }, { k: 'hawk', name: 'เหยี่ยว', min: 1575 },
     { k: 'eagle', name: 'อินทรี', min: 1725 }, { k: 'phoenix', name: 'ฟีนิกซ์', min: 1875 }
   ];
-  var DROP = 25;
+  var DROP = 40;   // 25 until 22 Oct 2026; 40 flaps ~30% less with the same accuracy (simulation)
   function birdIndex(r) { var i = 0; for (var j = 1; j < BIRDS.length; j++) if (r >= BIRDS[j].min) i = j; return i; }
   function stepBird(cur, r) { var n = birdIndex(r); return n > cur || r < BIRDS[cur].min - DROP ? n : cur; }
   var MODE_W = { competitive: 1, normal: 1, social: 0.5 }; // rating weight per court mode

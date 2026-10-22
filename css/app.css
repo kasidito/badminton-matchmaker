@@ -106,7 +106,7 @@ p{margin:0}
 .card{background:var(--surface);border:1px solid var(--card-line);box-shadow:var(--shadow);border-radius:20px;padding:14px;min-width:0;display:grid;gap:10px}
 .card h2{font:700 1.05rem var(--font-display);margin:0}
 .roundhead{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-.roundhead h2{font:800 1.85rem/1.15 var(--font-display);margin:0}
+.roundhead h2{font:800 1.85rem/1.3 var(--font-display);margin:0}
 .roundhead .sub{font-size:.85rem;color:var(--muted);flex-basis:100%;margin-top:-8px}
 .strip{border-radius:20px;padding:14px 18px;background:var(--banner);border:1px solid var(--panel-line);color:var(--on-banner);display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .strip .fact{display:grid;gap:2px;align-content:start;min-width:0}
@@ -133,7 +133,7 @@ p{margin:0}
 .vs::before{content:"";position:absolute;top:2px;bottom:2px;left:50%;width:3px;margin-left:-1.5px;border-radius:2px;background:var(--net)}
 .vs span{position:relative;width:32px;height:28px;border-radius:8px;background:var(--hi);color:var(--on-hi);font:800 .78rem var(--font-display);display:grid;place-items:center}
 .team{display:flex;flex-direction:column;gap:2px;min-width:0;padding:10px;border-radius:14px;background:var(--team-bg);color:var(--team-fg);border:2px solid var(--team-line);transition:opacity .15s,background .15s}
-.tlabel{font:700 .74rem var(--font-display);color:var(--team-muted);padding-inline:6px;letter-spacing:.02em}
+.tlabel{font:700 .74rem var(--font-display);color:var(--team-muted);padding-inline:6px}
 .team.win{border-color:var(--hi);box-shadow:0 0 0 1px var(--hi)}
 .team.lose{background:var(--lose-bg);opacity:.75}
 .team.lose .pl,.team.lose .tmeta,.team.lose .tlabel{opacity:.6}
@@ -216,7 +216,7 @@ details summary::-webkit-details-marker{display:none}
 .hero .medal{position:absolute;right:-4px;bottom:-4px;width:26px;height:26px;border-radius:50%;background:var(--hi);color:var(--on-hi);font:800 .85rem var(--font-display);display:grid;place-items:center;border:3px solid var(--on-hi)}
 .hero .who{flex:1}
 .hero .who small{display:block;font-size:.76rem;color:var(--on-banner-muted)}
-.hero .who b{font:800 1.5rem/1.15 var(--font-display)}
+.hero .who b{font:800 1.5rem/1.3 var(--font-display)}
 .hero .who span{color:var(--on-banner-muted)}
 .hero .score{text-align:right}
 .hero .score b{display:block;font:800 1.9rem/1 var(--font-display);color:var(--hi);font-variant-numeric:tabular-nums}
@@ -380,7 +380,7 @@ h2.big{font-size:1.15rem}
 /* settings: grouped cards, rows like a phone settings list */
 .scol{display:grid;gap:18px;align-content:start;min-width:0}
 .sgroup{display:grid;gap:8px;min-width:0}
-.ghead{display:flex;align-items:center;gap:8px;margin:0 6px;font:700 .82rem var(--font-display);color:var(--muted);letter-spacing:.02em}
+.ghead{display:flex;align-items:center;gap:8px;margin:0 6px;font:700 .82rem var(--font-display);color:var(--muted)}
 .scard{padding:2px 16px;gap:0}
 .scard>*{border-top:1px solid var(--line)}
 .scard>:first-child{border-top:0}
@@ -507,3 +507,8 @@ label.sw,.modechip{isolation:isolate}
 /* small phones: four header buttons (sync, undo, theme, settings) leave less room for the brand */
 .brand h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:400px){.brand{gap:8px}.brand h1{font-size:1.05rem}.top .brand .logo{width:34px;height:34px}.hicons{gap:5px}}
+
+/* Thai text: stacked vowels and tone marks need room (W3C thai-lreq) - no letter-spacing, line-height >= 1.3
+   wherever Thai can appear, and nicer wrapping for paragraphs (Safari 26+, ignored elsewhere) */
+p,.muted,.small,.stext span,.note{text-wrap:pretty}
+.brand .date,.awrow .nm,.mrow .nm,.h2hres .side span,.chip .cn,.chip .cm{line-height:1.4}

@@ -1004,7 +1004,7 @@
     h += '</div></div>';
     var tally = A.BIRDS.map(function () { return 0; });
     list.forEach(function (p) { tally[RT.B[p.id]]++; });
-    h += '<div class="card span"><h2>ระดับนก</h2><p class="muted small">ขึ้นระดับทันทีที่คะแนนถึง และลดระดับเมื่อคะแนนต่ำกว่าเส้นเกิน 25 แต้ม คิดจากผลในก๊วนนี้เท่านั้น</p><div class="birds">' +
+    h += '<div class="card span"><h2>ระดับนก</h2><p class="muted small">ขึ้นระดับทันทีที่คะแนนถึง และลดระดับเมื่อคะแนนต่ำกว่าเส้นเกิน 40 แต้ม คิดจากผลในก๊วนนี้เท่านั้น</p><div class="birds">' +
       A.BIRDS.map(function (b, i) {
         return '<div class="btile">' + bird(i, 'xl') + '<b>' + b.name + '</b><span class="rng">' + birdRange(i) + '</span><span class="muted small">' + BIRD_HINT[b.k] + '</span>' + (tally[i] ? '<span class="cnt">' + tally[i] + ' คน</span>' : '') + '</div>';
       }).join('') + '</div></div>';
@@ -1155,7 +1155,7 @@
   function renderStatus() {
     var el = $('syncPill'); if (!el) return;
     var map = {
-      saved: ['saved', 'cloud', 'บันทึกแล้ว'], pending: ['', 'cloud', 'รอบันทึก'], saving: ['', 'cloud', 'กำลังบันทึก'],
+      saved: ['saved', 'check', 'บันทึกแล้ว'], pending: ['', 'cloud-up', 'รอบันทึก'], saving: ['', 'cloud-up', 'กำลังบันทึก'],
       offline: ['offline', 'cloud-off', 'ออฟไลน์ เก็บในเครื่อง'], error: ['error', 'cloud-off', 'บันทึกไม่ได้ แตะลองใหม่']
     };
     var m = map[ui.status] || map.pending;

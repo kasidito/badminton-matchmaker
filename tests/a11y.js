@@ -29,6 +29,21 @@ async function audit(page, label) {
   const r = await page.evaluate(async () => (await window.axe.run(document, { runOnly: { type: 'rule', values: ['color-contrast', 'target-size'] }, resultTypes: ['violations'] })).violations
     .map(v => v.id + ': ' + v.nodes.slice(0, 4).map(n => n.target.join(' ') + (n.any[0] && n.any[0].data && n.any[0].data.contrastRatio ? ' (' + n.any[0].data.contrastRatio + ')' : '')).join(', ')));
   check(`${label}: axe contrast and target size`, r.length === 0, r.join(' | '));
+  // Thai text: no letter-spacing, and line-height at least 1.3x the font size where Thai can be clipped
+  const thai = await page.evaluate(() => {
+    const bad = new Set();
+    document.querySelectorAll('body *').forEach(e => {
+      if (!e.getClientRects().length) return;
+      const own = [...e.childNodes].some(n => n.nodeType === 3 && /[\u0E00-\u0E7F]/.test(n.textContent));
+      if (!own) return;
+      const cs = getComputedStyle(e), fs = parseFloat(cs.fontSize);
+      if (cs.letterSpacing !== 'normal' && parseFloat(cs.letterSpacing) !== 0) bad.add('letter-spacing on ' + (e.className || e.tagName));
+      const lh = cs.lineHeight === 'normal' ? fs * 1.4 : parseFloat(cs.lineHeight);
+      if (/hidden|clip/.test(cs.overflow + cs.overflowY) && lh < fs * 1.3) bad.add('tight clipped line on ' + (e.className || e.tagName));
+    });
+    return [...bad];
+  });
+  check(`${label}: Thai text has room for tone marks and no letter-spacing`, thai.length === 0, thai.join(', '));
   const s = [...new Set(await page.evaluate(`(${small.toString()})()`))];
   check(`${label}: every control is at least 44 px`, s.length === 0, s.join(', '));
 }

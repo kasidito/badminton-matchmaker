@@ -158,14 +158,14 @@ test('reads the number of courts from a LINE post', () => {
   assert.ok(!A.isRoster('1. ชิน'));
 });
 
-test('bird ranks: promote at the floor, drop only after falling 25 below it', () => {
+test('bird ranks: promote at the floor, drop only after falling 40 below it', () => {
   assert.strictEqual(A.BIRDS[A.birdIndex(1200)].k, 'chick');
   assert.strictEqual(A.BIRDS[A.birdIndex(1500)].k, 'pigeon');
   assert.strictEqual(A.BIRDS[A.birdIndex(1900)].k, 'phoenix');
   const hawk = A.birdIndex(1575);
   assert.strictEqual(A.stepBird(A.birdIndex(1570), 1576), hawk);   // up straight away
-  assert.strictEqual(A.stepBird(hawk, 1560), hawk);                 // 15 below the floor: still a hawk
-  assert.strictEqual(A.stepBird(hawk, 1549), A.birdIndex(1549));    // 26 below: drops
+  assert.strictEqual(A.stepBird(hawk, 1540), hawk);                 // 35 below the floor: still a hawk
+  assert.strictEqual(A.stepBird(hawk, 1534), A.birdIndex(1534));    // 41 below: drops
   // every starting level lands in its own bird
   assert.deepStrictEqual(['B', 'N', 'I', 'A', 'P'].map(l => A.BIRDS[A.birdIndex(A.LV[l])].k), ['chick', 'sparrow', 'pigeon', 'hawk', 'eagle']);
 });
