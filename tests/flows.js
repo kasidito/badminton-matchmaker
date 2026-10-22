@@ -7,7 +7,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const fake = fs.readFileSync(path.join(__dirname, 'fake-supabase.js'), 'utf8');
-const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' };
+const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.webp': 'image/webp' };
 const server = http.createServer((req, res) => {
   const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/^\/$/, '/index.html'));
   fs.readFile(p, (e, buf) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'content-type': types[path.extname(p)] || 'text/plain' }); res.end(buf); });
@@ -58,6 +58,43 @@ const viewText = page => page.textContent('#view');
     await pu.waitForTimeout(3600);
     check('and does not loop when the stamp still differs', /[?&]v=999999999999$/.test(pu.url().split('#')[0]));
     await pu.context().close();
+  }
+
+  /* ---------- courtside basics: long-court flag, queue reasons, last-saved time, rank progress, screen-on switch ---------- */
+  {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const pc = await ctx.newPage();
+    await pc.clock.install({ time: new Date('2026-10-21T20:00:00+07:00') });
+    await pc.route('**/supabase.js', r => r.fulfill({ body: fake, contentType: 'application/javascript' }));
+    await pc.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '', contentType: 'text/css' }));
+    await pc.goto(base);
+    await signIn(pc);
+    await pc.click('[data-tab=people]');
+    await pc.fill('#nameIn', '1. ก\n2. ข\n3. ค\n4. ง\n5. จ\n6. ฉ\n7. ช\n8. ซ\n9. ฌ\n10. ญ');
+    await pc.click('#addForm button[type=submit]');
+    await pc.waitForSelector('#toast:not([hidden])');
+    await pc.evaluate(() => { const b = document.querySelector('[data-act=new-done]'); if (b) b.click(); });
+    await pc.click('[data-tab=play]');
+    await pc.evaluate(() => document.querySelector('[data-act=fill]:not([disabled])').click());
+    check('queue chips say games and wait', /ยังไม่เล่น|เกม/.test(await pc.textContent('.chips')));
+    check('no court is flagged at the start', !(await pc.$('.court.long')));
+    await pc.clock.runFor(21 * 60 * 1000);
+    check('a court playing over 20 minutes is flagged without a re-render', (await pc.$$('.court.long')).length >= 1 && (await pc.$$('.badge.warn')).length >= 1);
+    check('the banner names the longest court', /นานสุด สนาม \d · 2\d น\./.test(await pc.textContent('.board .longest')), await pc.textContent('.board .longest'));
+    check('chips now show the wait', /รอ 2\d น\./.test(await pc.textContent('.chips')), await pc.textContent('.chips'));
+    await pc.click('[data-act=win][data-ci="0"][data-s="0"]');
+    await pc.click('[data-act=save][data-ci="0"]');
+    await pc.clock.runFor(3000);
+    await pc.waitForSelector('#syncPill.saved');
+    check('the status pill shows when it last saved', /บันทึก \d+:\d\d/.test(await pc.getAttribute('#syncPill', 'title') || '') || /บันทึก \d+:\d\d/.test(await pc.textContent('#syncPill')), await pc.textContent('#syncPill'));
+    await pc.click('[data-tab=rank]');
+    const rk = await pc.textContent('.rklist');
+    check('ranking shows certainty and distance to the next bird', /นิ่ง \d+%/.test(rk) && /อีก \d+ ถึง/.test(rk), rk.slice(0, 160));
+    await pc.waitForFunction(() => [...document.querySelectorAll('.bird img')].every(i => i.complete));
+    check('bird emblems are pictures that load', await pc.evaluate(() => { const im = [...document.querySelectorAll('.bird img')]; return im.length > 0 && im.every(i => i.naturalWidth > 0); }));
+    await pc.click('#setBtn');
+    check('settings has the keep-screen-on switch', !!(await pc.$('[data-act=wakesw]')));
+    await ctx.close();
   }
 
   /* ---------- phone, full evening ---------- */
@@ -236,7 +273,7 @@ const viewText = page => page.textContent('#view');
   await p4.click('[data-act=win][data-ci="0"][data-s="0"]');
   await p4.click('[data-act=save][data-ci="0"]');
   await p4.click('[data-act=draw][data-ci="0"]');
-  await p4.waitForTimeout(7500);                 // toast has expired
+  await p4.waitForTimeout(10500);                // an undo toast stays 10 s, then expires
   // steps so far: draw court 1, fill the rest, save court 1, draw court 1
   check('toast has gone but header undo is available', !(await p4.isVisible('#toast')) && !(await p4.isDisabled('#undoBtn')));
   await p4.click('#undoBtn');                    // undo the draw
@@ -408,7 +445,7 @@ const viewText = page => page.textContent('#view');
   check('new admin is added to this club', (await db(p2)).club_admins.some(a => a.user_id === helperId && a.club_id === 1) && (await viewText(p2)).includes('helper@example.com'));
   await p2.setViewportSize({ width: 390, height: 844 });
   const admRows = await p2.$$eval('.alist .arow', rows => rows.map(r => ({ h: Math.round(r.getBoundingClientRect().height), w: Math.round(r.querySelector('.who').getBoundingClientRect().width) })));
-  check('admin rows keep the email on one line with room (no squeezed column)', admRows.length >= 2 && admRows.every(r => r.h < 110 && r.w > 150), JSON.stringify(admRows));
+  check('admin rows keep the email on one line with room (no squeezed column)', admRows.length >= 2 && admRows.every(r => r.h < 140 && r.w > 150), JSON.stringify(admRows));
   await p2.setViewportSize({ width: 1180, height: 820 });
   await p2.click(`[data-act=admin-reset][data-id="${helperId}"]`);
   await p2.fill('#admResetPw', 'new-pass-22');

@@ -9,7 +9,7 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const fake = fs.readFileSync(path.join(__dirname, 'fake-supabase.js'), 'utf8');
-const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.png': 'image/png' };
+const types = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.webp': 'image/webp', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   const p = path.join(root, decodeURIComponent(req.url.split('?')[0]).replace(/^\/$/, '/index.html'));
   fs.readFile(p, (e, buf) => { if (e) { res.writeHead(404); res.end(); return; } res.writeHead(200, { 'content-type': types[path.extname(p)] || 'text/plain' }); res.end(buf); });
@@ -95,7 +95,7 @@ async function run(browser, base, label, viewport, scheme, seed) {
     // layout guard: icons keep their box and player names stay one compact line
     const odd = await page.evaluate(() => {
       const out = [];
-      document.querySelectorAll('.bird').forEach(b => { const s = b.querySelector('svg'); if (s && Math.abs(s.getBoundingClientRect().height - b.getBoundingClientRect().height) > 1) out.push('emblem overflows its box'); });
+      document.querySelectorAll('.bird').forEach(b => { const s = b.querySelector('img'); if (s && Math.abs(s.getBoundingClientRect().height - b.getBoundingClientRect().height) > 1) out.push('emblem overflows its box'); });
       document.querySelectorAll('.pl').forEach(p => { if (p.getBoundingClientRect().height > 90) out.push('player name row too tall'); });
       return [...new Set(out)];
     });

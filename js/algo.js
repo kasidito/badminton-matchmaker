@@ -56,12 +56,12 @@
       var m = done[i], ids = m.t[0].concat(m.t[1]), ok = true;
       ids.forEach(function (id) { if (!(id in R)) ok = false; });
       if (!ok || !hasRes(m)) { if (trail) trail[i] = null; continue; }
-      var mult = (MODE_W[m.mode || 'normal'] || 1) * marginFactor(m.sc);
       var before = {};
       ids.forEach(function (id) { before[id] = R[id]; Sg[id] = Math.sqrt(Sg[id] * Sg[id] + TAU * TAU); });
       var T = m.t.map(function (t) { return { mu: R[t[0]] + R[t[1]], s2: Sg[t[0]] * Sg[t[0]] + Sg[t[1]] * Sg[t[1]] }; });
       var c = Math.sqrt(T[0].s2 + T[1].s2 + 2 * BETA * BETA);
       var p0 = 1 / (1 + Math.exp((T[1].mu - T[0].mu) / c)), pr = [p0, 1 - p0];
+      var mult = (MODE_W[m.mode || 'normal'] || 1) * marginFactor(m.sc, pr[m.w]);
       var nr = {}, ns = {};
       [0, 1].forEach(function (s) {
         var won = m.w === s ? 1 : 0;
@@ -80,10 +80,36 @@
     applyAdj(done.length);
     return { R: R, Sg: Sg, G: G, W: W, C: C, B: B };
   }
-  /* optional score (e.g. [21, 15]): a close game moves ratings less, a big win more (0.75 at 0 points apart, 1.25 at 15+) */
+  /* optional score (e.g. [21, 15]) scales the change by how the margin compares with what the ratings expected
+     (DUPR-style "result vs expected"). pWin = the winners' chance before the game. The expected gap is 7.5 points
+     for an even game, up to 15 for a sure favourite, down to 0 for a long shot; the factor runs 0.75..1.25 around it.
+     So in an even game 21-19 -> 0.82 and 21-6 -> 1.25 (as before), but a favourite crushing a weak pair 21-6 only
+     gets ~1.1, and a favourite scraping 21-19 gets 0.75, which stops strong pairs inflating on weak ones. */
   function validScore(sc) { return !!sc && sc.length === 2 && sc.every(function (x) { return typeof x === 'number' && isFinite(x) && x >= 0 && x <= 99; }) && sc[0] !== sc[1]; }
-  function marginFactor(sc) { return validScore(sc) ? 0.75 + 0.5 * Math.min(Math.abs(sc[0] - sc[1]), 15) / 15 : 1; }
+  function marginFactor(sc, pWin) {
+    if (!validScore(sc)) return 1;
+    var p = pWin == null ? 0.5 : pWin, gap = Math.min(Math.abs(sc[0] - sc[1]), 15), expect = 7.5 + 7.5 * (2 * p - 1);
+    return 1 + 0.25 * Math.max(-1, Math.min(1, (gap - expect) / 7.5));
+  }
   function settled(RT, id) { return RT.Sg[id] < SETTLED; }
+  /* how sure the rating is, 0..100 % (DUPR-style reliability): 0 at the start, 60 at SETTLED (about 10 matches), 100 at sigma 45 */
+  function certainty(sigma) {
+    var s = sigma == null ? SIG0 : sigma;
+    var v = s >= SETTLED ? 60 * (SIG0 - s) / (SIG0 - SETTLED) : 60 + 40 * (SETTLED - s) / (SETTLED - 45);
+    return Math.max(0, Math.min(100, Math.round(v)));
+  }
+  /* the next bird up from the shown one, and the MMR still needed (null at the top) */
+  function nextBird(birdIdx, r) {
+    var n = BIRDS[birdIdx + 1];
+    return n ? { name: n.name, need: Math.max(1, Math.ceil(n.min - r)) } : null;
+  }
+  /* weeks away make a rating less certain (Glicko/DUPR idea): after 2 free weeks each week adds IDLE² variance, capped at SIG0 */
+  var IDLE = 14;
+  function idleSigma(sigma, weeksAway) {
+    if (sigma == null) return null;
+    var extra = Math.max(0, Math.floor(weeksAway) - 2);
+    return Math.min(SIG0, Math.sqrt(sigma * sigma + extra * IDLE * IDLE));
+  }
   /* chance team 0 wins, from the same model (needs RT from ratings for the sigmas) */
   function winProb(RT, t) {
     var a = RT.R[t[0][0]] + RT.R[t[0][1]], b = RT.R[t[1][0]] + RT.R[t[1][1]];
@@ -324,7 +350,11 @@
   /* MMR, uncertainty and career games each player carries into the next session */
   function carryForward(T) {
     var RT = ratings(T.done, T.players, T.adj);
-    return T.players.map(function (p) { return { id: p.id, start_mmr: Math.round(RT.R[p.id]), start_sigma: Math.round(RT.Sg[p.id] * 100) / 100, career_games: RT.C[p.id] }; });
+    // someone who did not play tonight keeps their stored sigma; the idle widening only counts once they play again
+    return T.players.map(function (p) {
+      var sg = RT.G[p.id] > 0 || p.sigma0 === undefined ? RT.Sg[p.id] : (p.sigma0 == null ? SIG0 : p.sigma0);
+      return { id: p.id, start_mmr: Math.round(RT.R[p.id]), start_sigma: Math.round(sg * 100) / 100, career_games: RT.C[p.id] };
+    });
   }
   function endGame(T, label) {
     if (!T.done.length) return null;
@@ -332,7 +362,7 @@
     var carry = carryForward(T), byId = {};
     carry.forEach(function (c) { byId[c.id] = c; });
     T.days.push(snap);
-    T.players.forEach(function (p) { p.start = byId[p.id].start_mmr; p.sigma = byId[p.id].start_sigma; p.games = byId[p.id].career_games; p.base = 0; p.freeSince = 0; p.rest = false; });
+    T.players.forEach(function (p) { p.start = byId[p.id].start_mmr; p.sigma = byId[p.id].start_sigma; p.games = byId[p.id].career_games; p.base = 0; p.freeSince = 0; p.rest = false; delete p.sigma0; });
     T.done = []; T.adj = []; T.live = T.courts.map(function () { return null; });
     return snap;
   }
@@ -460,6 +490,33 @@
     return out;
   }
 
+  /* attendance from saved matches: last night each member played and a weekly streak that forgives one missed week
+     (a broken streak makes people quit unless it can be repaired). Weeks start on Monday. today = 'YYYY-MM-DD'. */
+  function weekOf(d) { return Math.floor((Date.parse(d + 'T00:00:00Z') / 86400000 + 3) / 7); }   // 1970-01-01 was a Thursday
+  function attendance(data, today) {
+    var last = {}, weeksBy = {}, clubWeeks = {};
+    historyMatches(data).forEach(function (x) {
+      if (!x.day) return;
+      var w = weekOf(x.day); clubWeeks[w] = 1;
+      (x.m.match_players || []).forEach(function (mp) {
+        var id = mp.player_id;
+        if (!last[id] || x.day > last[id]) last[id] = x.day;
+        (weeksBy[id] || (weeksBy[id] = {}))[w] = 1;
+      });
+    });
+    var weeks = Object.keys(clubWeeks).map(Number).sort(function (a, b) { return b - a; }), out = {};
+    Object.keys(last).forEach(function (k) {
+      var mine = weeksBy[k], streak = 0, grace = false;
+      for (var i = 0; i < weeks.length; i++) {
+        if (mine[weeks[i]]) streak++;
+        else if (!grace) grace = true;
+        else break;
+      }
+      out[k] = { last: last[k], streak: streak, daysAway: today ? Math.round((Date.parse(today) - Date.parse(last[k])) / 86400000) : null };
+    });
+    return out;
+  }
+
   /* A numbered sign-up post ("1. ชิน", "2. โฟล์ค") is the full list for the night. */
   function isRoster(text) {
     return String(text).split(/\r?\n/).filter(function (l) { return /^\s*\d+\s*[.)]/.test(l); }).length >= 2;
@@ -475,11 +532,11 @@
 
   var Algo = {
     LV: LV, BIRDS: BIRDS, birdIndex: birdIndex, stepBird: stepBird, MODE_W: MODE_W, keyOf: keyOf, shuffle: shuffle, hasRes: hasRes, startOf: startOf, findP: findP, toggleRest: toggleRest, validScore: validScore, marginFactor: marginFactor, lineup: lineup, nextFour: nextFour, remapId: remapId, matchName: matchName, nameKey: nameKey,
-    stats: stats, ratings: ratings, winProb: winProb, settled: settled, SIG0: SIG0, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
+    stats: stats, ratings: ratings, winProb: winProb, settled: settled, certainty: certainty, nextBird: nextBird, idleSigma: idleSigma, SIG0: SIG0, liveIds: liveIds, isStale: isStale, queueOrder: queueOrder,
     planCourts: planCourts, normalize: normalize, drawCourt: drawCourt, redrawCourt: redrawCourt,
     emptySlots: emptySlots, fillEmpty: fillEmpty, freeCount: freeCount, saveResult: saveResult, swapPos: swapPos,
     setCourtCount: setCourtCount, minCredit: minCredit, daySnapshot: daySnapshot, carryForward: carryForward,
-    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts, isRoster: isRoster, monthsOf: monthsOf, monthStats: monthStats, monthAwards: monthAwards, headToHead: headToHead
+    endGame: endGame, resetGame: resetGame, parseNames: parseNames, parseCourts: parseCourts, isRoster: isRoster, monthsOf: monthsOf, monthStats: monthStats, monthAwards: monthAwards, headToHead: headToHead, attendance: attendance
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Algo;
   else root.Algo = Algo;

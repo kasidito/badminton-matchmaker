@@ -22,8 +22,16 @@
   function activeCount() { return S.players.filter(function (p) { return p.active; }).length; }
   function fmtDelta(d) { return d > 0 ? '+' + d : String(d); }
   function mins(ts) { return ts ? Math.max(0, Math.floor((Date.now() - ts) / 60000)) : null; }
+  var LONG_MIN = 20;      // a court playing this long gets an orange flag
   function courtAge(ts) { var m = mins(ts); return m ? 'เล่นมา ' + m + ' นาที' : 'เพิ่งเริ่ม'; }
-  function waitText(pre, ts) { var w = mins(ts); return pre + (w ? ' · ' + w + ' น.' : ''); }
+  function longestText() {
+    var best = null;
+    S.live.forEach(function (c, i) { if (c && c.at && (!best || c.at < best.at)) best = { at: c.at, i: i }; });
+    if (!best) return 'ยังไม่มีสนามที่เล่นอยู่';
+    var m = mins(best.at);
+    return (m >= LONG_MIN ? 'นานสุด ' : 'เล่นนานสุด ') + 'สนาม ' + (best.i + 1) + ' · ' + (m || 0) + ' น.';
+  }
+  function waitText(pre, ts) { var w = mins(ts); return pre + (w ? ' · รอ ' + w + ' น.' : ''); }
   function hmSince(t0) { var el = Math.max(0, Date.now() - t0); return Math.floor(el / 3600000) + ':' + ('0' + Math.floor(el / 60000) % 60).slice(-2); }
   function thaiDate(d, opts) { try { return d.toLocaleDateString('th-TH', opts); } catch (e) { return d.toISOString().slice(0, 10); } }
   function todayTitle() { return thaiDate(new Date(), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
@@ -168,7 +176,7 @@
         await openOrCreateSession();
         await DB.sync(S.sessionId, buildPayload());
       }
-      writeCache();
+      writeCache(); ui.lastSaved = Date.now();
       setStatus(sync.dirty ? 'pending' : 'saved');
     } catch (e) {
       sync.dirty = true; writeCache();
@@ -230,6 +238,18 @@
   }
   function fromRow(row, active, base) {
     return { id: row.id, name: row.name, active: !!active, base: base || 0, level: row.level, start: row.start_mmr, sigma: row.start_sigma == null ? null : +row.start_sigma, aliases: row.aliases || [], games: row.career_games, freeSince: active ? Date.now() : 0, qr: Math.random() };
+  }
+  /* widen sigma for members who have been away (A.idleSigma). p.sigma is reset from the database on every load, so this
+     never compounds; p.sigma0 keeps the stored value for members who end up not playing tonight (see A.carryForward). */
+  function applyIdle() {
+    var last = {}, today = todayISO();
+    (S.days || []).forEach(function (d) { if (d.date) (d.players || []).forEach(function (r) { if (r.id != null && (!last[r.id] || d.date > last[r.id])) last[r.id] = d.date; }); });
+    S.players.forEach(function (p) {
+      if (p.pending || p.sigma == null) return;
+      p.sigma0 = p.sigma;
+      var since = last[p.id] ? (Date.parse(today) - Date.parse(last[p.id])) / 86400000 / 7 : 52;   // not in the last 30 nights: a long time
+      p.sigma = A.idleSigma(p.sigma, since);
+    });
   }
   /* session may be null: tonight has not been opened yet */
   function buildState(session, rows, cache) {
@@ -318,6 +338,7 @@
       }
       S = buildState(session, res[0], cache);
       S.days = res[2];
+      applyIdle();
       if (res[3]) S.rules = res[3]; else S.rules = S.rules || [];
       sync.dirty = !!(cache && cache.dirty && cache.S.sessionId === (session ? session.id : null));
     } catch (e) {
@@ -486,12 +507,14 @@
     var h = '<div class="strip span"><div class="fact"><b>' + Object.keys(played).length + '</b><span>คืนที่มีการแข่ง</span></div><div class="fact"><b>' + data.matches.length + '</b><span>แมตช์ทั้งหมด</span></div><div class="fact"><b>' + rows.length + '</b><span>คนที่เคยลงสนาม</span></div></div>';
     if (!rows.length) return h + '<div class="card span"><span class="muted">ยังไม่มีแมตช์ที่บันทึก</span></div>';
     var nm = function (id) { return map[id] ? esc(map[id].name) : 'สมาชิกเก่า'; };
+    var att = A.attendance(data, todayISO());
+    h += awayCard(att, map);
     h += h2hCard(data, rows.map(function (r) { return map[r.id]; }).sort(function (a, b) { return a.name.localeCompare(b.name, 'th'); }));
     h += '<div class="card span"><h2>ทุกคืน</h2><p class="muted small">รวมคืนนี้ส่วนที่บันทึกขึ้นระบบแล้ว แตะชื่อเพื่อดูคู่หูและกราฟคะแนน</p><div class="alltable">';
     rows.forEach(function (r) {
       var open = ui.statId === r.id, mmr = Math.round(RT.R[r.id] != null ? RT.R[r.id] : (r.trail[r.trail.length - 1] || 1500));
       h += '<button class="srow2' + (open ? ' on' : '') + '" data-act="stat-open" data-id="' + r.id + '" aria-expanded="' + open + '">' + bird(A.birdIndex(mmr), 'md') +
-        '<span class="who"><b>' + nm(r.id) + '</b><span>' + Object.keys(r.nights).length + ' คืน · ' + r.g + ' เกม · ชนะ ' + Math.round(r.w / r.g * 100) + '%</span></span>' +
+        '<span class="who"><b>' + nm(r.id) + '</b><span>' + Object.keys(r.nights).length + ' คืน · ' + r.g + ' เกม · ชนะ ' + Math.round(r.w / r.g * 100) + '%' + (att[r.id] && att[r.id].streak >= 2 ? ' · มาติด ' + att[r.id].streak + ' สัปดาห์' : '') + '</span></span>' +
         spark(r.trail.slice(-30), 80, 26) + '<b class="mm">' + mmr + '</b></button>';
       if (open) {
         var pk = Object.keys(r.part).map(function (k) { return { id: +k, g: r.part[k].g, w: r.part[k].w }; }).filter(function (x) { return x.g >= 2; })
@@ -614,6 +637,19 @@
     return h + '</div></div>';
   }
 
+  /* ---------- members who have not played for 3+ weeks (for the admin to message) ---------- */
+  var AWAY_DAYS = 21;
+  function awayCard(att, map) {
+    var list = Object.keys(att).map(function (k) { return { id: +k, a: att[k] }; })
+      .filter(function (x) { return map[x.id] && !map[x.id].active && x.a.daysAway >= AWAY_DAYS; })
+      .sort(function (x, y) { return y.a.daysAway - x.a.daysAway; });
+    if (!list.length) return '';
+    return '<div class="card span"><details' + det('away') + '><summary>หายไปนาน (' + list.length + ')' + ic('chev') + '</summary>' +
+      '<p class="muted small">ไม่ได้ลงเล่นมา 3 สัปดาห์ขึ้นไป ลองทักชวนกลับมาในกลุ่ม LINE</p><div class="awaylist">' + list.map(function (x) {
+        return '<div class="awayrow"><b>' + esc(map[x.id].name) + '</b><span class="muted small">หายไป ' + Math.floor(x.a.daysAway / 7) + ' สัปดาห์ · มาล่าสุด ' + shortDay(x.a.last) + '</span></div>';
+      }).join('') + '</div></details></div>';
+  }
+
   /* ---------- head-to-head: pick two members ---------- */
   function h2hCard(data, members) {
     ui.h2h = ui.h2h || [null, null];
@@ -648,11 +684,9 @@
   }
   function birdImage(k) {
     return new Promise(function (ok, bad) {
-      var sym = document.getElementById('b-' + k); if (!sym) { bad(new Error('no emblem')); return; }
-      var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + sym.getAttribute('viewBox') + '" width="512" height="512">' + sym.innerHTML + '</svg>';
       var img = new Image();
       img.onload = function () { ok(img); }; img.onerror = function () { bad(new Error('emblem did not load')); };
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+      img.src = birdSrc(k, true);
     });
   }
   async function makeCard(id) {
@@ -717,9 +751,12 @@
       '<button class="btn" data-act="card-close">' + ic('x') + 'ปิด</button></div></div></div>';
   }
 
+  /* rank emblems are pictures in img/birds (192 px for the UI, 512 px for the rank card); bump BIRD_V when they change */
+  var BIRD_V = 1;
+  function birdSrc(k, big) { return 'img/birds/' + k + (big ? '-512' : '') + '.webp?v=' + BIRD_V; }
   function bird(i, size) {
     var b = A.BIRDS[i] || A.BIRDS[0];
-    return '<span class="bird bd-' + b.k + (size ? ' ' + size : '') + '" role="img" aria-label="' + b.name + '" title="' + b.name + '"><svg aria-hidden="true"><use href="#b-' + b.k + '"/></svg></span>';
+    return '<span class="bird bd-' + b.k + (size ? ' ' + size : '') + '" role="img" aria-label="' + b.name + '" title="' + b.name + '"><img src="' + birdSrc(b.k) + '" alt="" decoding="async" draggable="false"></span>';
   }
   function birdRange(i) {
     var lo = A.BIRDS[i].min, hi = i + 1 < A.BIRDS.length ? A.BIRDS[i + 1].min - 1 : null;
@@ -769,10 +806,11 @@
       return '<section class="court">' + head + '</div><div class="slot">' + hint + (free >= 4 ? '<button class="btn sm hi" data-act="draw" data-ci="' + ci + '">' + ic('shuffle') + 'สุ่มลงสนามนี้</button>' : '') + '</div></section>';
     }
     var stale = A.isStale(S, c), m = mins(c.at);
-    head += '<span class="badge" data-tick="court" data-t="' + (c.at || '') + '">' + courtAge(c.at) + '</span>';
+    var long = m != null && m >= LONG_MIN;
+    head += '<span class="badge' + (long ? ' warn' : '') + '" data-tick="court" data-t="' + (c.at || '') + '">' + courtAge(c.at) + '</span>';
     head += '<button class="redraw" data-act="redraw" data-ci="' + ci + '" aria-label="สุ่มสนาม ' + (ci + 1) + ' ใหม่ (ไม่นับแมตช์)">' + ic('shuffle') + 'สุ่มใหม่</button></div>';
     var p = A.winProb(RT, c.t);
-    var h = '<section class="court">' + head;
+    var h = '<section class="court' + (long ? ' long' : '') + '">' + head;
     if (stale) h += '<div class="note">มีคนในสนามนี้ปิดสถานะเล่นแล้ว แตะชื่อเพื่อสลับกับคนในคิว หรือกดสุ่มใหม่</div>';
     h += '<div class="match' + (A.hasRes(c) ? ' picked' : '') + '">' + teamHtml(c, ci, 0, map, RT, st, p) + '<div class="vs" aria-hidden="true"><span>VS</span></div>' + teamHtml(c, ci, 1, map, RT, st, p) + '</div>';
     if (A.hasRes(c) && !stale) {
@@ -800,7 +838,7 @@
     var sitting = q.length + resting.filter(function (p) { return A.liveIds(S).indexOf(p.id) < 0; }).length;
     var clock = function (ms) { var d = new Date(ms); return d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); };
     var h = '<section class="board" aria-label="สรุปคืนนี้"><svg class="wm" aria-hidden="true"><use href="#i-shuttle"/></svg><div class="facts4">' +
-      '<div class="fact"><span>แมตช์ที่จบ</span><b id="doneCount">' + S.done.length + '</b><small>กำลังเล่น ' + on + '/' + S.courts.length + ' สนาม</small></div>' +
+      '<div class="fact"><span>แมตช์ที่จบ</span><b id="doneCount">' + S.done.length + '</b><small>กำลังเล่น ' + on + '/' + S.courts.length + ' สนาม</small><small class="longest" data-tick="longest">' + longestText() + '</small></div>' +
       '<div class="fact"><span>เวลาเล่น</span><b data-tick="hm" data-t="' + (t0 || '') + '">' + (t0 ? hm : '–') + '</b><small>' + (t0 ? 'เริ่ม ' + clock(t0) + ' น.' : 'ยังไม่เริ่ม') + '</small></div>' +
       '<div class="fact"><span>เกมต่อคน</span><b>' + (lo === hi ? lo : lo + '–' + hi) + '</b><small class="' + (fair ? 'ok' : 'warn') + '">' + (fair ? 'เท่ากันดี' : 'ต่างกัน ' + (hi - lo) + ' เกม') + '</small></div>' +
       '<div class="fact"><span>มาวันนี้</span><b>' + here.length + '</b><small>สนามละ 4 · พัก ' + sitting + ' คน</small></div></div>';
@@ -829,7 +867,7 @@
       L.list.map(function (x) { return x.id; }).concat(L.held).forEach(function (id) {
         var pl = map[id], w = mins(pl.freeSince), isNext = nx.indexOf(id) >= 0, mate = heldSet[id] ? (S.rules || []).filter(function (r) { return r.kind === 'with' && (r.a === id || r.b === id); })[0] : null;
         h += '<button class="chip' + (isNext ? ' next' : '') + (heldSet[id] ? ' resting' : '') + (sameSel({ id: id }) ? ' sel' : '') + '" data-act="pickq" data-id="' + id + '">' + bird(RT.B[id], 'sm') +
-          '<span class="cn">' + esc(pl.name) + '</span><span class="cm" data-tick="wait" data-t="' + (pl.freeSince || '') + '" data-pre="' + (st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น') + '">' + waitText(st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น', pl.freeSince) + '</span>' +
+          '<span class="cn">' + esc(pl.name) + '</span><span class="cm" data-tick="wait" data-t="' + (pl.freeSince || '') + '" data-pre="' + (st.played[id] ? st.played[id] + ' เกม' : 'ยังไม่เล่น') + '">' + waitText(st.played[id] ? 'เล่น ' + st.played[id] : 'ยังไม่เล่น', pl.freeSince) + '</span>' +
           (isNext ? '<span class="tag-next">ลงต่อ</span>' : mate ? '<span class="tag-rest">รอคู่</span>' : '') + '</button>';
       });
       h += '</div>';
@@ -923,15 +961,16 @@
     if (ui.editMembers) h += '<p class="note small">แตะถังขยะสีแดงเพื่อลบคนที่ยังไม่ได้เล่นคืนนี้ ประวัติเดิมยังอยู่ในระบบ</p>';
     return h;
   }
+  function nextText(RT, id) { var n = A.nextBird(RT.B[id], RT.R[id]); return n ? ' · อีก ' + n.need + ' ถึง' + n.name : ''; }
   function viewRank() {
     var RT = A.ratings(S.done, S.players, S.adj);
     var list = S.players.filter(function (p) { return p.active || RT.G[p.id] > 0; });
     list.sort(function (a, b) { return RT.R[b.id] - RT.R[a.id] || RT.G[b.id] - RT.G[a.id] || a.id - b.id; });
-    var h = '<div class="roundhead"><h2>อันดับ</h2><span class="sub">MMR · คืนนี้ ' + S.done.length + ' แมตช์ · ป้ายสีคือขึ้นหรือลงคืนนี้ · ยังไม่นิ่ง = เล่นไม่ถึง 10 แมตช์</span></div>';
+    var h = '<div class="roundhead"><h2>อันดับ</h2><span class="sub">MMR · คืนนี้ ' + S.done.length + ' แมตช์ · ป้ายสีคือขึ้นหรือลงคืนนี้ · นิ่ง % = คะแนนเชื่อถือได้แค่ไหน (60% ขึ้นไปถือว่านิ่ง)</span></div>';
     var top = list[0];
     if (top && ui.editId !== top.id) {
       var tg = RT.G[top.id], tw = RT.W[top.id], tr = Math.round(RT.R[top.id]);
-      h += '<section class="hero"><span class="medal-wrap">' + bird(RT.B[top.id], 'lg') + '<span class="medal">1</span></span><div class="who"><small>อันดับหนึ่ง · ' + A.BIRDS[RT.B[top.id]].name + '</small><b>' + esc(top.name) + '</b><small>ชนะ ' + tw + ' แพ้ ' + (tg - tw) + '</small></div>' +
+      h += '<section class="hero"><span class="medal-wrap">' + bird(RT.B[top.id], 'lg') + '<span class="medal">1</span></span><div class="who"><small>อันดับหนึ่ง · ' + A.BIRDS[RT.B[top.id]].name + '</small><b>' + esc(top.name) + '</b><small>ชนะ ' + tw + ' แพ้ ' + (tg - tw) + nextText(RT, top.id) + '</small></div>' +
         '<div class="score"><b>' + tr + '</b>' + deltaHtml(tr - A.startOf(top)) + '</div>' +
         '<button class="icon" data-act="edit-mmr" data-id="' + top.id + '" aria-label="แก้ MMR ของ ' + esc(top.name) + '">' + ic('pencil') + '</button></section>';
     }
@@ -945,7 +984,7 @@
         return;
       }
       h += '<div class="rk' + (i < 3 ? ' podium' : '') + '"><span class="pos">' + (i + 1) + '</span>' +
-        bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + (!A.settled(RT, p.id) ? '<span class="prov">ยังไม่นิ่ง</span>' : '') + '</b><span>' + A.BIRDS[RT.B[p.id]].name + ' · ชนะ ' + w + ' แพ้ ' + (g - w) + (p.active ? '' : ' · กลับแล้ว') + '</span></div>' +
+        bird(RT.B[p.id], 'md') + '<div class="who"><b>' + esc(p.name) + (A.certainty(RT.Sg[p.id]) < 60 ? '<span class="prov">นิ่ง ' + A.certainty(RT.Sg[p.id]) + '%</span>' : '') + '</b><span>' + A.BIRDS[RT.B[p.id]].name + ' · ชนะ ' + w + ' แพ้ ' + (g - w) + nextText(RT, p.id) + (p.active ? '' : ' · กลับแล้ว') + '</span></div>' +
         '<div class="score"><b>' + rt + '</b>' + deltaHtml(rt - A.startOf(p)) + '</div>' +
         '<button class="icon" data-act="edit-mmr" data-id="' + p.id + '" aria-label="แก้ MMR ของ ' + esc(p.name) + '">' + ic('pencil') + '</button></div>';
     });
@@ -1052,7 +1091,8 @@
       '<button class="btn sm' + (ui.confirm === 'reset' ? ' danger' : '') + '" data-act="reset">' + ic('trash') + (ui.confirm === 'reset' ? 'กดอีกครั้ง' : 'รีเซ็ต') + '</button></div>';
 
     var look = '<div class="srow"><div class="stext"><b>สีของแอป</b><span>อัตโนมัติ = ตามที่ตั้งในเครื่อง</span></div>' + seg('สีของแอป', [['auto', 'อัตโนมัติ'], ['light', 'สว่าง'], ['dark', 'มืด']], themePref(), 'theme', 'v') + '</div>' +
-      '<div class="srow"><div class="stext"><b>โหมดจอใหญ่</b><span>ตัวใหญ่ ซ่อนปุ่ม ไว้วางโชว์ข้างสนาม</span></div><label class="sw"><input type="checkbox" data-act="boardsw"' + (S.board ? ' checked' : '') + ' aria-label="โหมดจอใหญ่"><span class="track"></span></label></div>';
+      '<div class="srow"><div class="stext"><b>โหมดจอใหญ่</b><span>ตัวใหญ่ ซ่อนปุ่ม ไว้วางโชว์ข้างสนาม</span></div><label class="sw"><input type="checkbox" data-act="boardsw"' + (S.board ? ' checked' : '') + ' aria-label="โหมดจอใหญ่"><span class="track"></span></label></div>' +
+      '<div class="srow"><div class="stext"><b>จอไม่ดับระหว่างเล่น</b><span>' + ('wakeLock' in navigator ? 'เปิดค้างไว้ตอนแอปอยู่หน้าจอ ปิดแอปแล้วจอดับตามปกติ' : 'เครื่องนี้ยังไม่รองรับ (iPhone/iPad ต้อง iOS 18.4 ขึ้นไป และเปิดจากไอคอนบนหน้าจอโฮม)') + '</span></div><label class="sw"><input type="checkbox" data-act="wakesw"' + (wakeWanted() ? ' checked' : '') + ' aria-label="จอไม่ดับระหว่างเล่น"><span class="track"></span></label></div>';
 
     var account = '<div class="srow"><div class="stext"><b>' + esc(ui.user && ui.user.email || '') + '</b><span>เข้าสู่ระบบอยู่</span></div><button class="btn sm" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
       '<form id="pwForm" class="sblock add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn sm" type="submit">เปลี่ยนรหัสผ่าน</button></form>';
@@ -1107,6 +1147,7 @@
       offline: ['offline', 'cloud-off', 'ออฟไลน์ เก็บในเครื่อง'], error: ['error', 'cloud-off', 'บันทึกไม่ได้ แตะลองใหม่']
     };
     var m = map[ui.status] || map.pending;
+    if (ui.status === 'saved' && ui.lastSaved) { var d = new Date(ui.lastSaved); m = m.slice(); m[2] = 'บันทึก ' + d.getHours() + ':' + ('0' + d.getMinutes()).slice(-2); }
     el.className = 'sync ' + m[0];
     el.title = ui.statusMsg || m[2];
     el.innerHTML = ic(m[1]) + '<span class="lbl">' + m[2] + '</span>';
@@ -1132,7 +1173,7 @@
     if (snap) { ui.undos.push({ snap: snap, label: msg }); if (ui.undos.length > 30) ui.undos.shift(); }
     ui.toast = { msg: msg, undo: !!snap };
     clearTimeout(ui.tt);
-    ui.tt = setTimeout(function () { ui.toast = null; renderToast(); }, 7000);
+    ui.tt = setTimeout(function () { ui.toast = null; renderToast(); }, snap ? 10000 : 7000);   // an undo offer stays longer
     if (S) renderToast();
   }
 
@@ -1422,6 +1463,7 @@
       setLevel(+t.dataset.id, t.value);
     }
     else if (a === 'boardsw') S.board = t.checked;
+    else if (a === 'wakesw') { setWake(t.checked); render(); return; }
     else if (a === 'h2h') { ui.h2h = ui.h2h || [null, null]; ui.h2h[+t.dataset.i] = t.value ? +t.value : null; render(); return; }
     else if (a === 'score') {
       var sc = S.live[+t.dataset.ci]; if (!sc) return;
@@ -1514,9 +1556,31 @@
     if (!S || ui.tab !== 'play') return;
     document.querySelectorAll('[data-tick]').forEach(function (el) {
       var t = +el.dataset.t || 0, k = el.dataset.tick;
-      el.textContent = k === 'court' ? courtAge(t) : k === 'hm' ? (t ? hmSince(t) : '–') : waitText(el.dataset.pre, t);
+      el.textContent = k === 'court' ? courtAge(t) : k === 'hm' ? (t ? hmSince(t) : '–') : k === 'longest' ? longestText() : waitText(el.dataset.pre, t);
+      if (k === 'court') {                      // the orange flag follows the clock without a re-render
+        var lg = t && mins(t) >= LONG_MIN, sec = el.closest('.court');
+        el.classList.toggle('warn', !!lg); if (sec) sec.classList.toggle('long', !!lg);
+      }
+      if (k === 'longest') el.classList.toggle('warn', /^นานสุด/.test(el.textContent));
     });
   }, 30000);
+  /* ---------- keep the screen on during a night (Screen Wake Lock; iOS 18.4+ in home-screen apps) ----------
+     Asked for on the first tap and again whenever the app comes back to the front; the system drops it when hidden. */
+  var wake = { lock: null, asking: false };
+  function wakeWanted() { try { return localStorage.getItem('bmm-wake') !== 'off'; } catch (e) { return true; } }
+  async function keepAwake() {
+    if (!S || wake.lock || wake.asking || !wakeWanted() || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    wake.asking = true;
+    try { wake.lock = await navigator.wakeLock.request('screen'); wake.lock.addEventListener('release', function () { wake.lock = null; }); } catch (e) { }
+    wake.asking = false;
+  }
+  function setWake(on) {
+    try { localStorage.setItem('bmm-wake', on ? 'on' : 'off'); } catch (e) { }
+    if (on) keepAwake(); else if (wake.lock) { wake.lock.release().catch(function () { }); wake.lock = null; }
+  }
+  document.addEventListener('click', keepAwake, true);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') keepAwake(); });
+
   /* ---------- self-update ----------
      GitHub Pages lets phones cache index.html for up to 10 minutes, and a home-screen app can keep an old copy longer.
      On start and whenever the app comes back to the front, fetch index.html past every cache and compare its ?v= stamp

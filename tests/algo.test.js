@@ -245,6 +245,38 @@ test('optional score: close games move ratings less, big wins more; a score that
 });
 
 
+test('score margin is judged against the expected result', () => {
+  assert.strictEqual(A.marginFactor([21, 19], 0.5).toFixed(3), (0.75 + 0.5 * 2 / 15).toFixed(3));    // even game: as before
+  assert.strictEqual(A.marginFactor([21, 6], 0.5), 1.25);
+  assert.ok(A.marginFactor([21, 6], 0.85) < 1.15, 'a favourite crushing a weak pair gains less');
+  assert.strictEqual(A.marginFactor([21, 19], 0.85), 0.75);
+  assert.strictEqual(A.marginFactor([21, 10], 0.2), 1.25, 'a long shot winning big counts fully');
+  // in a real replay: strong pair beating a weak pair 21-6 moves less than an even pair doing the same
+  const P = [{ id: 1, start: 1800 }, { id: 2, start: 1800 }, { id: 3, start: 1350 }, { id: 4, start: 1350 }];
+  const Q = [{ id: 1, start: 1500 }, { id: 2, start: 1500 }, { id: 3, start: 1500 }, { id: 4, start: 1500 }];
+  const gain = (pl, sc) => A.ratings([{ t: [[1, 2], [3, 4]], w: 0, mode: 'normal', sc }], pl, []).R[1] - pl[0].start;
+  assert.ok(gain(P, [21, 6]) / gain(P, undefined) < gain(Q, [21, 6]) / gain(Q, undefined));
+});
+
+test('certainty, next bird and idle widening', () => {
+  assert.strictEqual(A.certainty(A.SIG0), 0);
+  assert.strictEqual(A.certainty(105), 60);
+  assert.strictEqual(A.certainty(45), 100);
+  assert.deepStrictEqual(A.nextBird(A.birdIndex(1500), 1500), { name: 'เหยี่ยว', need: 75 });
+  assert.strictEqual(A.nextBird(5, 1900), null);
+  assert.strictEqual(A.idleSigma(60, 2), 60, 'two weeks off changes nothing');
+  assert.ok(A.idleSigma(60, 10) > 60 && A.idleSigma(60, 10) < A.idleSigma(60, 26));
+  assert.strictEqual(A.idleSigma(60, 500), A.SIG0, 'capped at the starting uncertainty');
+  assert.strictEqual(A.idleSigma(null, 30), null);
+  // someone away who does not play tonight keeps their stored sigma when the night is carried forward
+  const T = session(5, ['normal'], 0);
+  T.players.forEach(p => { p.sigma0 = 60; p.sigma = A.idleSigma(60, 20); });
+  T.done.push({ t: [[1, 2], [3, 4]], w: 0, mode: 'normal' });
+  const c = A.carryForward(T);
+  assert.strictEqual(c.find(x => x.id === 5).start_sigma, 60);
+  assert.ok(c.find(x => x.id === 1).start_sigma < A.idleSigma(60, 20), 'players who played use tonight\'s result');
+});
+
 test('index.html stamps every local css/js link with the same ?v= (no stale mix on phones)', () => {
   const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
   const links = html.match(/(?:href|src)="(?:css|js)\/[^"]+"/g);
@@ -290,4 +322,20 @@ test('head-to-head counts games as partners and as opponents', () => {
   assert.deepStrictEqual(h.vs, { g: 2, a: 1, b: 1 });
   assert.strictEqual(h.lastDay, '2026-10-08');
   assert.deepStrictEqual(A.headToHead(hist(), 1, 1).vs, { g: 0, a: 0, b: 0 });
+});
+
+test('attendance: last night, days away and a weekly streak that forgives one missed week', () => {
+  const mp = (id) => ({ player_id: id, won: true });
+  const m = (sid, ids) => ({ session_id: sid, seq: 1, team_a: ids.slice(0, 2), team_b: ids.slice(2), winner: 0, match_players: ids.map(mp) });
+  const data = {
+    sessions: [{ id: 1, played_on: '2026-09-02' }, { id: 2, played_on: '2026-09-09' }, { id: 3, played_on: '2026-09-16' }, { id: 4, played_on: '2026-09-23' }, { id: 5, played_on: '2026-09-30' }],
+    matches: [m(1, [1, 2, 3, 4]), m(2, [1, 2, 3, 5]), m(3, [2, 3, 4, 5]), m(4, [1, 2, 3, 5]), m(5, [1, 2, 4, 5])]
+  };
+  const a = A.attendance(data, '2026-10-21');
+  assert.strictEqual(a[2].streak, 5, 'every week');
+  assert.strictEqual(a[1].streak, 4, 'missed one week: forgiven, still counts the rest');
+  assert.strictEqual(a[3].streak, 4, 'missed the latest week only: forgiven');
+  assert.strictEqual(a[4].streak, 2, 'a second miss ends the streak');
+  assert.strictEqual(a[3].last, '2026-09-23');
+  assert.strictEqual(a[3].daysAway, 28);
 });

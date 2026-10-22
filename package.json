@@ -7,14 +7,15 @@
     "test": "node --test tests/algo.test.js",
     "smoke": "node tests/smoke.js",
     "flows": "node tests/flows.js",
-    "e2e": "node tests/smoke.js && node tests/flows.js",
+    "e2e": "node tests/smoke.js && node tests/flows.js && node tests/a11y.js",
     "test:db": "node tests/db/permissions.mjs",
     "explore": "node tests/explore.js",
     "uat": "node tests/uat.js",
     "stamp": "node tools/stamp.js"
   },
   "devDependencies": {
-    "playwright": "^1.47.0",
-    "@electric-sql/pglite": "0.2.17"
+    "@electric-sql/pglite": "0.2.17",
+    "axe-core": "4.10.3",
+    "playwright": "1.56.1"
   }
 }

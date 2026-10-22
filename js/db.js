@@ -130,7 +130,7 @@
         var agg = {};
         list.forEach(function (m) {
           (m.match_players || []).forEach(function (mp) {
-            var a = agg[mp.player_id] || (agg[mp.player_id] = { name: nm(mp.player_id), played: 0, win: 0, start: null, mmr: null });
+            var a = agg[mp.player_id] || (agg[mp.player_id] = { id: mp.player_id, name: nm(mp.player_id), played: 0, win: 0, start: null, mmr: null });
             a.played++; if (mp.won) a.win++;
             if (a.start == null && mp.rating_before != null) a.start = Math.round(+mp.rating_before);
             if (mp.rating_after != null) a.mmr = Math.round(+mp.rating_after);
@@ -141,7 +141,7 @@
         var label = s.title;
         try { label = new Date(s.played_on + 'T12:00:00').toLocaleDateString('th-TH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { }
         return {
-          ts: s.ended_at ? Date.parse(s.ended_at) : 0, label: label, count: list.length, players: rows,
+          ts: s.ended_at ? Date.parse(s.ended_at) : 0, date: s.played_on, label: label, count: list.length, players: rows,
           matches: list.map(function (m) { var x = { t: [m.team_a.map(nm), m.team_b.map(nm)], w: m.winner, mode: m.mode }; if (m.score_a != null && m.score_b != null) x.sc = [m.score_a, m.score_b]; return x; })
         };
       });
