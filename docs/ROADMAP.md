@@ -31,15 +31,22 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 
 ## Next (suggested, owner to pick)
 
-| # | Item | Size | Why |
+| # | Item | Size | Needs an owner decision? |
 |---|---|---|---|
-| 1 | Cost split v1: court + shuttle cost per head from games played, PromptPay QR in the LINE summary, paid tick on chips | M | Every Thai competitor has it (research report, 22 Oct). Needs the owner to lift the 20 Oct hold |
-| 2 | Read-only player page by QR (token per night, no login) | M | Players see the queue on their own phone. Needs the owner to allow one public page |
-| 3 | Thai voice call of the next match (speaker button, admin taps) | S–M | Less shouting across the hall |
-| 4 | Before selling: move hosting off GitHub Pages, Supabase Pro, self sign-up, PDPA kit | M–L | See the research report, part 2 |
+| 1 | Run 2–3 real nights; check on real devices: screen stays on, home-screen icon, two devices see the same night | – | No (owner task) |
+| 2 | Demotion buffer 25 → 40 (ranks flap ~30% less, same accuracy) | S | Yes (ask first) |
+| 3 | Thai voice call of the next match (speaker button, admin taps) | S–M | No |
+| 4 | Thai text check: tone marks never clipped, colour never the only signal | S | No |
+| 5 | Update the infographic guide to the new bird pictures | S | No |
+| 6 | Cost split v1: per-head court + shuttle cost from games played, PromptPay QR in the LINE summary, paid tick | M | Yes: lifts the 20 Oct hold |
+| 7 | Read-only player page by QR (token per night, no login) | M | Yes: first public page |
+| 8 | Live sync between devices (iPad shows, phone runs) | M | No |
+| 9 | Before selling: move hosting off GitHub Pages, Supabase Pro, self sign-up, manual billing, PDPA kit, sample-data onboarding, free-tier watermark | M–L | Yes |
 
 ## Later / ideas
 
 - Leaving at a set time
+- 7 or 10 bird ranks (หงส์ between อินทรี and ฟีนิกซ์). **Owner kept 6, 22 Oct 2026**; revisit if several members reach ฟีนิกซ์.
+- Winners-stay court mode, only if members ask
 - Cost split (court + shuttles), paid checkbox. **On hold by owner's decision, 20 Oct 2026.**
 - Reserve list from the LINE post (names under the `------` line). **Declined by owner, 21 Oct 2026**: every numbered name is checked in.
