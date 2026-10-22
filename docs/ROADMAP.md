@@ -9,11 +9,12 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 | 1 | Supabase → Authentication → URL Configuration: Site URL + Redirect URL = the Pages address (for forgot password) | Owner | Waiting |
 | 2 | Wed 21 Oct: run the night on the old app, press "คัดลอกข้อมูลสำรอง" at the end, then import it (Settings → ข้อมูลและขั้นสูง → นำเข้าจากแอปเดิม) | Owner | Waiting |
 | 3 | Run `docs/UAT.md` on the iPad and the phone; report issues | Owner | Waiting |
-| 4 | Add a second admin to ก๊วนแบด as a backup (forgot-password emails only reach Supabase team members) | Owner | Suggested |
+| 4 | Add a second admin to ก๊วนแบด as a backup (forgot-password emails only reach Supabase team members) | Owner | Done 21 Oct |
 | 5 | Optional: leaked password protection (Supabase advisor; needs a paid plan) | Owner | Optional |
 | 6 | Run `20261021090000_openskill_aliases_club_tools.sql` in the SQL editor | Owner | Done 21 Oct |
 | 7 | Run `20261021120000_pair_rules_scores.sql` in the SQL editor | Owner | Done 21 Oct (verified) |
 | 8 | Gmail SMTP (app password) in Authentication → Emails → SMTP, see README "Email" | Owner | Waiting |
+| 9 | Run `20261022120000_live_view_and_realtime.sql` in the SQL editor (players' QR page, two-device follow) | Owner | Waiting |
 
 ## Shipped (20–21 Oct)
 
@@ -27,6 +28,7 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 - 21 Oct: OpenSkill ratings, "ใช่คนเดิมไหม" on check-in with remembered spellings, offline member add, LINE summary, all-nights stats, leave/delete club, Google Sheet removed
 - 21 Oct: pair rules (เล่นคู่กัน / ห้ามเจอกัน), optional real scores (feed MMR margin), UAT walk 53 pass / 0 fail / 5 manual
 - 22 Oct: new bird emblem pictures; courtside basics (screen stays on, 44 px tap targets with an accessibility test, last-saved time, long-court flag, wait time on queue chips); score margin judged against the expected result; uncertainty grows for members away; certainty % and distance to the next bird; members away 3+ weeks and weekly attendance streaks. Research report: `research_notes/` + project doc `badminton-app-research-improve-and-sell.md`
+- 22 Oct (later): demotion buffer 40; Thai typography check + distinct sync icons; infographic uses the new birds; players' live view by QR (`live.html`); two admin devices follow each other (Realtime). Needs `20261022120000_live_view_and_realtime.sql` run in the SQL editor. Thai voice call declined (would disturb other courts)
 - Tests: unit, two UI runs, seeded random long runs (`npm run explore`), database permission replay (`npm run test:db`)
 
 ## Next (suggested, owner to pick)
@@ -34,14 +36,8 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 | # | Item | Size | Needs an owner decision? |
 |---|---|---|---|
 | 1 | Run 2–3 real nights; check on real devices: screen stays on, home-screen icon, two devices see the same night | – | No (owner task) |
-| 2 | Demotion buffer 25 → 40 (ranks flap ~30% less, same accuracy) | S | Yes (ask first) |
-| 3 | Thai voice call of the next match (speaker button, admin taps) | S–M | No |
-| 4 | Thai text check: tone marks never clipped, colour never the only signal | S | No |
-| 5 | Update the infographic guide to the new bird pictures | S | No |
-| 6 | Cost split v1: per-head court + shuttle cost from games played, PromptPay QR in the LINE summary, paid tick | M | Yes: lifts the 20 Oct hold |
-| 7 | Read-only player page by QR (token per night, no login) | M | Yes: first public page |
-| 8 | Live sync between devices (iPad shows, phone runs) | M | No |
-| 9 | Before selling: move hosting off GitHub Pages, Supabase Pro, self sign-up, manual billing, PDPA kit, sample-data onboarding, free-tier watermark | M–L | Yes |
+| 2 | Cost split v1: per-head court + shuttle cost from games played, PromptPay QR in the LINE summary, paid tick | M | Yes: lifts the 20 Oct hold |
+| 3 | Before selling: move hosting off GitHub Pages, Supabase Pro, self sign-up, manual billing, PDPA kit, sample-data onboarding, free-tier watermark | M–L | Yes |
 
 ## Later / ideas
 

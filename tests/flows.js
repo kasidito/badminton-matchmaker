@@ -97,6 +97,57 @@ const viewText = page => page.textContent('#view');
     await ctx.close();
   }
 
+  /* ---------- two admin devices follow each other; players' live view by QR ---------- */
+  {
+    const qrSrc = fs.readFileSync(require.resolve('qrcode-generator/qrcode.js'), 'utf8');
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const open = async url => {
+      const pg = await ctx.newPage(); pg.errors = []; pg.on('pageerror', e => pg.errors.push(e.message));
+      await pg.route('**/supabase.js', r => r.fulfill({ body: fake, contentType: 'application/javascript' }));
+      await pg.route('https://fonts.googleapis.com/**', r => r.fulfill({ body: '', contentType: 'text/css' }));
+      await pg.route('**/qrcode-generator@1.4.4/qrcode.js', r => r.fulfill({ body: qrSrc, contentType: 'application/javascript' }));
+      await pg.goto(url); return pg;
+    };
+    const a = await open(base);
+    await signIn(a);
+    await a.click('[data-tab=people]');
+    await a.fill('#nameIn', '1. ก\n2. ข\n3. ค\n4. ง\n5. จ\n6. ฉ\n7. ช\n8. ซ\n9. ฌ\n10. ญ');
+    await a.click('#addForm button[type=submit]');
+    await a.waitForSelector('#syncPill.saved', { timeout: 8000 });
+    const b = await open(base);                       // second device: already signed in on this browser
+    await b.waitForSelector('#app:not([hidden])');
+    await b.click('[data-tab=play]');
+    await a.click('[data-tab=play]');
+    await a.evaluate(() => document.querySelector('[data-act=fill]:not([disabled])').click());
+    await a.waitForSelector('#syncPill.saved', { timeout: 8000 });
+    await b.waitForFunction(() => document.querySelectorAll('.match').length === 2, null, { timeout: 5000 }).catch(() => {});
+    check('device B shows the courts device A just drew, without a refresh', (await b.$$('.match')).length === 2);
+    await b.click('[data-act=win][data-ci="0"][data-s="0"]');
+    await b.click('[data-act=save][data-ci="0"]');
+    await b.waitForSelector('#syncPill.saved', { timeout: 8000 });
+    await a.waitForFunction(() => document.querySelector('#doneCount') && document.querySelector('#doneCount').textContent === '1', null, { timeout: 5000 }).catch(() => {});
+    check('device A sees the result saved on device B', (await a.textContent('#doneCount')) === '1');
+    await a.click('[data-act=live-open]');
+    await a.waitForSelector('.livebox .qr svg', { timeout: 5000 });
+    check('the QR for players is drawn', !!(await a.$('.livebox .qr svg')));
+    const link = await a.textContent('.livelink');
+    check('the link carries a long random token', /live\.html#[a-z0-9]{16,}$/.test(link), link);
+    await a.waitForSelector('#syncPill.saved', { timeout: 8000 });
+    const c = await open(base + 'live.html#' + link.split('#')[1]);
+    await c.waitForSelector('.lcourt', { timeout: 8000 }).catch(() => {});
+    const lt = await c.textContent('#live');
+    check('the players\' page shows courts, next and the queue', (await c.$$('.lcourt')).length >= 2 && lt.includes('รอลงสนาม') && lt.includes('ลงต่อ'), lt.slice(0, 160));
+    check('the players\' page shows no MMR', !/MMR|\b1[0-9]{3}\b/.test(lt));
+    check('the players\' page fits a phone', await noSideScroll(c));
+    await a.click('[data-act=live-new]');
+    await a.waitForSelector('#syncPill.saved', { timeout: 8000 });
+    await a.waitForTimeout(300);
+    await c.reload(); await c.waitForTimeout(500);
+    check('after "เปลี่ยนลิงก์" the old link stops working', (await c.textContent('#live')).includes('ลิงก์นี้ใช้ไม่ได้แล้ว'));
+    check('no script errors on two devices and the players\' page', a.errors.length + b.errors.length + c.errors.length === 0, a.errors.concat(b.errors, c.errors).join(' | '));
+    await ctx.close();
+  }
+
   /* ---------- phone, full evening ---------- */
   const page = await newPage(browser, base, 390, 844);
   check('phone: sign-in screen fits', await noSideScroll(page));

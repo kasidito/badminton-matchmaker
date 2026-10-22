@@ -94,6 +94,19 @@
       must(await c.rpc('close_session', { p_session_id: sessionId, p_players: carry }));
     },
 
+    /* players' live view (QR link): the trimmed picture of tonight and its secret token, see live.html */
+    setLive: async function (sessionId, token, live) {
+      must(await c.from('sessions').update({ share_token: token || null, live: token ? live : null }).eq('id', sessionId));
+    },
+    /* other admin devices of this club: every change to its nights arrives here (Supabase Realtime, RLS applies) */
+    watchNights: function (onRow) {
+      if (!c.channel || club == null) return function () { };
+      var ch = c.channel('nights-' + club)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sessions', filter: 'club_id=eq.' + club }, function (p) { if (p && p.new) onRow(p.new); })
+        .subscribe();
+      return function () { try { c.removeChannel(ch); } catch (e) { } };
+    },
+
     /* every table, for the "download all data" backup */
     exportAll: async function () {
       var out = { exportedAt: new Date().toISOString() };

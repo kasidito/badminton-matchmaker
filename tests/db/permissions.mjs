@@ -29,6 +29,6 @@ const sql = fs.readFileSync(path.join(repo, 'tests/db/permissions.sql'), 'utf8')
 let out = '';
 try { await db.exec(sql); } catch (e) { out = e.message; }
 console.log(out);
-const bad = /ALLOWED\(BAD\)|FAILED/.test(out) || !out.startsWith('RESULT');
+const bad = /ALLOWED\(BAD\)|MISSING\(BAD\)|LEAKED\(BAD\)|FAILED/.test(out) || !out.startsWith('RESULT');
 console.log(bad ? 'FAIL: a permission check did not hold' : 'ok   all permission checks held');
 process.exit(bad ? 1 : 0);

@@ -78,6 +78,17 @@ begin
   exception when others then r := r || ', anon create_club=denied'; end;
   execute 'reset role';
 
+  -- players' live view: only the right token on an open night, and only the trimmed live picture
+  update public.sessions set share_token = 'tok-0123456789abcdef', live = '{"courts":[]}' where id = s1;
+  execute 'set local role anon';
+  if public.live_night('tok-0123456789abcdef') is null then r := r || E'\nanon live with token=MISSING(BAD)'; else r := r || E'\nanon live with token=ok'; end if;
+  if public.live_night('tok-wrong-000000000') is not null then r := r || ', wrong token=ALLOWED(BAD)'; else r := r || ', wrong token=nothing'; end if;
+  if public.live_night('short') is not null then r := r || ', short token=ALLOWED(BAD)'; else r := r || ', short token=nothing'; end if;
+  if (public.live_night('tok-0123456789abcdef') ? 'state') then r := r || ', full state=LEAKED(BAD)'; else r := r || ', full state hidden'; end if;
+  begin select count(*) into n from public.sessions; r := r || ', anon sessions rows=' || n;
+  exception when others then r := r || ', anon sessions=denied'; end;
+  execute 'reset role';
+
   perform set_config('request.jwt.claims', json_build_object('sub', owner)::text, true);
   execute 'set local role authenticated';
   select count(*) into n from public.players; r := r || E'\nowner after: players=' || n;

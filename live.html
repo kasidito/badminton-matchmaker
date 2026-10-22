@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f3f5f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#071226" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
+<title>คิวคืนนี้ · Budmintan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/app.css?v=202610220500">
+</head>
+<body class="livepage">
+<!-- Players' read-only view of tonight, opened from the QR the admin shows (live.html#<token>).
+     No login: the token unlocks one open night's trimmed picture (public.live_night). -->
+<main id="live" class="live" aria-live="polite"><p class="muted">กำลังโหลดคิวคืนนี้…</p></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<script src="js/config.js?v=202610220500"></script>
+<script src="js/live.js?v=202610220500"></script>
+</body>
+</html>

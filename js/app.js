@@ -11,6 +11,8 @@
   var BIRD_HINT = { chick: 'เพิ่งฟักออกจากไข่', sparrow: 'เริ่มบินได้ ตีโต้เป็นเกม', pigeon: 'บินคล่อง เล่นได้ทุกตำแหน่ง', hawk: 'สายรุก ตบแรง', eagle: 'เจ้าเวหา คุมเกมได้', phoenix: 'ตำนานของก๊วน' };
 
   var S = null;   // the session being run (shape documented in CLAUDE.md)
+  /* this tab, so realtime echoes of our own saves are ignored (sessionStorage: two tabs are two "devices") */
+  var DEV = (function () { try { var d = sessionStorage.getItem('bmm-dev'); if (!d) { d = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('bmm-dev', d); } return d; } catch (e) { return Math.random().toString(36).slice(2, 10); } })();
   var ui = { tab: 'play', sel: null, confirm: null, ct: null, editId: null, toast: null, tt: null, user: null, busy: null, status: 'saved', statusMsg: '', undos: [] };
   var sync = { timer: null, running: false, dirty: false };
 
@@ -170,6 +172,7 @@
         if (!needsSession()) { writeCache(); setStatus('saved'); return; }
         await openOrCreateSession();
       }
+      S.by = DEV; S.at = Date.now();
       try { await DB.sync(S.sessionId, buildPayload()); }
       catch (e) {
         if (e.code !== 'P0002') throw e;           // night was closed on another device: open a new one and retry
@@ -177,6 +180,7 @@
         await DB.sync(S.sessionId, buildPayload());
       }
       writeCache(); ui.lastSaved = Date.now();
+      pushLive();
       setStatus(sync.dirty ? 'pending' : 'saved');
     } catch (e) {
       sync.dirty = true; writeCache();
@@ -326,7 +330,7 @@
     ui.club = { id: club.id, name: club.name };
     DB.setClub(club.id);
     try { localStorage.setItem(clubKey(), JSON.stringify(ui.club)); } catch (e) { }
-    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.allStats = null; ui.statId = null; ui.month = null; ui.h2h = null; closeCard(); ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
+    S = null; ui.undos = []; ui.admins = null; ui.newIds = []; ui.nameAsk = []; ui.allStats = null; ui.statId = null; ui.month = null; ui.h2h = null; closeCard(); ui.liveOpen = false; ui.shareFallback = null; ui.det = {}; ui.sel = null; ui.editPlayer = null; ui.resetId = null; ui.restPick = false;
     sync.dirty = false;
     var cache = readCache();
     try {
@@ -350,6 +354,84 @@
     $('gate').hidden = true; $('app').hidden = false;
     render();
     if (sync.dirty) { setStatus('pending'); sync.timer = setTimeout(runSync, 500); } else setStatus('saved');
+    if (ui.unwatch) ui.unwatch();
+    ui.unwatch = DB.watchNights(onRemoteNight);
+  }
+
+  /* ---------- realtime: another admin device changed tonight ----------
+     Last save wins: the newer state replaces ours unless we have changes not saved yet (then ours goes up next and
+     the other device follows us). Our own saves come back too; S.by tells them apart. */
+  function onRemoteNight(row) {
+    if (!S || !row || (row.state && row.state.by === DEV)) return;
+    if (row.status === 'closed') {
+      if (row.id === S.sessionId && !sync.dirty) { toast('อีกเครื่องจบคืนนี้แล้ว', null); openClub(ui.club); }
+      return;
+    }
+    if (row.status !== 'open' || !row.state || row.state.v !== 4) return;
+    if (sync.dirty || sync.running) return;
+    if (S.sessionId && row.id !== S.sessionId) return;
+    if (S.at && row.state.at && row.state.at <= S.at) return;       // older than what we have
+    var keep = { days: S.days, rules: S.rules };
+    S = row.state; S.sessionId = row.id; S.title = row.title; S.days = keep.days; S.rules = keep.rules;
+    A.normalize(S);
+    ui.sel = null; ui.undos = [];
+    writeCache(); renderDate(); render();
+    setStatus('saved');
+  }
+
+  /* ---------- players' live view (QR) ---------- */
+  function liveView() {
+    var RT = A.ratings(S.done, S.players, S.adj), st = A.stats(S.done, S.players), map = byId();
+    var who = function (id) { var p = map[id]; return p ? { n: p.name, b: RT.B[id] } : { n: '-', b: 0 }; };
+    var L = A.lineup(S, null), nx = A.nextFour(S);
+    return {
+      at: Date.now(), done: S.done.length,
+      courts: S.live.map(function (c, i) { return c ? { n: i + 1, mode: S.courts[i].mode, since: c.at || null, t: c.t.map(function (t) { return t.map(who); }) } : { n: i + 1, mode: S.courts[i].mode, empty: true }; }),
+      next: (nx && nx.length === 4 ? nx : []).map(function (id) { return who(id).n; }),
+      queue: L.list.map(function (x) { return x.id; }).concat(L.held).map(function (id) { var p = map[id]; return { n: p.name, b: RT.B[id], g: st.played[id] || 0, since: p.freeSince || null, rest: !!p.rest }; })
+    };
+  }
+  function pushLive() {
+    if (!S || !S.sessionId || !S.share) return;
+    DB.setLive(S.sessionId, S.share, liveView()).catch(function () { });
+  }
+  function liveUrl() { return location.origin + location.pathname.replace(/index\.html$/, '').replace(/[^/]*$/, '') + 'live.html#' + S.share; }
+  function newToken() {
+    var a = new Uint8Array(16); try { crypto.getRandomValues(a); } catch (e) { for (var i = 0; i < 16; i++) a[i] = Math.random() * 256; }
+    return Array.prototype.map.call(a, function (x) { return 'abcdefghijkmnpqrstuvwxyz23456789'[x % 32]; }).join('');
+  }
+  var qrLib = null;
+  function loadQr() {
+    if (window.qrcode) return Promise.resolve();
+    if (qrLib) return qrLib;
+    qrLib = new Promise(function (ok, bad) {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+      sc.onload = ok; sc.onerror = function () { qrLib = null; bad(new Error('โหลดตัวสร้าง QR ไม่ได้')); };
+      document.head.appendChild(sc);
+    });
+    return qrLib;
+  }
+  async function openLive() {
+    if (!activeCount()) { toast('เช็กอินผู้เล่นก่อน แล้วค่อยเปิดลิงก์ให้ผู้เล่นดู', null); return; }
+    if (!S.share) { S.share = newToken(); changed(); }
+    ui.liveOpen = true; ui.qrSvg = null; render();
+    try { await loadQr(); var q = window.qrcode(0, 'M'); q.addData(liveUrl()); q.make(); ui.qrSvg = q.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); }
+    catch (e) { ui.qrSvg = ''; toast(errMsg(e), null); }
+    render();
+  }
+  function liveModal() {
+    var url = liveUrl();
+    return '<div class="modal" role="dialog" aria-modal="true" aria-label="ลิงก์ให้ผู้เล่นดูคิว"><div class="modalbox livebox">' +
+      '<h2>ให้ผู้เล่นดูคิว</h2><p class="muted small">สแกน QR หรือเปิดลิงก์ เห็นสนาม คนลงต่อ และคิวของคืนนี้ อัปเดตเองทุกไม่กี่วินาที ไม่ต้องล็อกอิน ไม่แสดงคะแนน MMR</p>' +
+      '<div class="qr">' + (ui.qrSvg == null ? '<span class="muted small">กำลังสร้าง QR…</span>' : ui.qrSvg) + '</div>' +
+      '<p class="livelink small">' + esc(url) + '</p>' +
+      '<div class="acts"><button class="btn primary" data-act="live-share">' + ic('share') + 'ส่งลิงก์</button>' +
+      '<a class="btn" href="' + esc(url) + '" target="_blank" rel="noopener">เปิดดู</a>' +
+      '<button class="btn" data-act="live-new">เปลี่ยนลิงก์</button>' +
+      '<button class="btn" data-act="live-off">ปิดลิงก์</button>' +
+      '<button class="btn" data-act="live-close">' + ic('x') + 'ปิด</button></div>' +
+      '<p class="muted small">ลิงก์ใช้ได้เฉพาะคืนนี้ จบคืนแล้วใช้ไม่ได้ กด "เปลี่ยนลิงก์" ถ้าลิงก์หลุดไปที่อื่น</p></div></div>';
   }
 
   /* ---------- player edit (name is written straight to players; MMR is a normal manual edit in S.adj) ---------- */
@@ -891,6 +973,7 @@
     var map = byId(), RT = A.ratings(S.done, S.players, S.adj), st = A.stats(S.done, S.players);
     var q = A.queueOrder(S, null), free = A.freeCount(S), fl = fillState();
     var h = '<div class="roundhead"><h2>สนาม</h2>' +
+      '<button class="btn sm livebtn" data-act="live-open">' + ic('qr') + 'ให้ผู้เล่นดูคิว</button>' +
       '<button class="btn primary fill-inline" data-act="fill"' + (fl.dis ? ' disabled' : '') + '>' + ic('shuffle') + fl.label + '</button></div>';
     h += boardHtml(map, RT, st, q);
     if (ui.sel) h += '<div class="selbar"><span>' + ic('swap') + ' เลือก <b>' + esc(selName()) + '</b> แตะคนอื่นในสนามหรือคิวเพื่อสลับ</span><button class="btn sm" data-act="unsel">ยกเลิก</button></div>';
@@ -910,7 +993,7 @@
       }
       h += courtHtml(c, ci, map, RT, st, free, next);
     });
-    return h + '</div></div>';
+    return h + '</div></div>' + (ui.liveOpen && S.share ? liveModal() : '');
   }
   function memberRow(p, st, RT, on) {
     if (ui.editPlayer === p.id) return playerEditor(p, RT);
@@ -1295,7 +1378,7 @@
       await flushSync();
       await DB.closeSession(S.sessionId, A.carryForward(S));
       var snap = A.endGame(S, S.title || todayTitle());
-      S.sessionId = null; S.title = null;              // next night opens at its first check-in
+      S.sessionId = null; S.title = null; S.share = null;   // next night opens at its first check-in; its own link
       S.players.forEach(function (p) { p.active = false; });
       ui.undos = []; ui.allStats = null;
       changed(); renderDate();
@@ -1434,6 +1517,11 @@
     else if (a === 'month-step') { var mo = ui.allStats && !ui.allStats.error ? A.monthsOf(ui.allStats) : []; var mi = mo.indexOf(ui.month) + (+t.dataset.d); if (mo[mi]) ui.month = mo[mi]; }
     else if (a === 'share-month') { shareText(monthText(monthModel(ui.month))); return; }
     else if (a === 'card') { makeCard(+t.dataset.id); return; }
+    else if (a === 'live-open') { openLive(); return; }
+    else if (a === 'live-close') { ui.liveOpen = false; }
+    else if (a === 'live-share') { var lu = liveUrl(); if (navigator.share) { navigator.share({ title: 'คิวคืนนี้', url: lu }).catch(function () { }); } else shareText(lu); return; }
+    else if (a === 'live-new') { S.share = newToken(); ui.liveOpen = false; changed(); openLive(); toast('เปลี่ยนลิงก์แล้ว ลิงก์เดิมใช้ไม่ได้', null); return; }
+    else if (a === 'live-off') { if (S.sessionId) DB.setLive(S.sessionId, null).catch(function () { }); S.share = null; ui.liveOpen = false; msg = 'ปิดลิงก์ดูคิวแล้ว'; }
     else if (a === 'card-share') { shareCard(); return; }
     else if (a === 'card-close') { closeCard(); }
     else if (a === 'stats-reload') { ui.allStats = null; }

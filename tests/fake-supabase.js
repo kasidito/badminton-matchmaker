@@ -96,6 +96,11 @@
         offline();
         window.__rpcLog.push({ name: name, args: JSON.parse(JSON.stringify(a)) });
         var me = db.auth && db.auth.user.id;
+        if (name === 'live_night') {      // public: one open night's trimmed picture by its token
+          var t = a.p_token, hit = t && t.length >= 16 ? db.sessions.filter(function (x) { return x.share_token === t && x.status === 'open'; })[0] : null;
+          var cl = hit ? db.clubs.filter(function (c) { return c.id === hit.club_id; })[0] : null;
+          ok({ data: hit ? { club: cl ? cl.name : '', title: hit.title, live: hit.live || null, updated_at: null } : null, error: null }); return;
+        }
         if (name === 'create_club') {
           if (!db.club_admins.some(function (x) { return x.user_id === me; })) fail('only club admins can create clubs', '42501');
           if (!(a.p_name || '').trim()) fail('name required', '22023');
@@ -151,11 +156,33 @@
     });
   }
 
+  var watchers = [];
+  window.addEventListener('storage', function (e) {
+    if (e.key !== KEY || !e.newValue) return;
+    var before = {}; db.sessions.forEach(function (x) { before[x.id] = JSON.stringify(x); });
+    db = JSON.parse(e.newValue);
+    db.sessions.forEach(function (row) {
+      if (before[row.id] === JSON.stringify(row)) return;
+      watchers.forEach(function (w) { if (!w.club || row.club_id === w.club) w.cb({ eventType: before[row.id] ? 'UPDATE' : 'INSERT', new: JSON.parse(JSON.stringify(row)) }); });
+    });
+  });
+  function channel() {
+    var mine = [];
+    var ch = {
+      on: function (type, f, cb) { var m = /club_id=eq\.(\d+)/.exec((f && f.filter) || ''); mine.push({ club: m ? +m[1] : null, cb: cb }); return ch; },
+      subscribe: function (cb) { mine.forEach(function (w) { watchers.push(w); }); if (cb) cb('SUBSCRIBED'); return ch; },
+      _off: function () { watchers = watchers.filter(function (w) { return mine.indexOf(w) < 0; }); }
+    };
+    return ch;
+  }
+
   window.supabase = {
     createClient: function () {
       return {
         from: query,
         rpc: rpc,
+        channel: channel,
+        removeChannel: function (ch) { if (ch && ch._off) ch._off(); },
         functions: {
           invoke: function (name, o) {
             var b = o.body || {}, me = db.auth && db.auth.user.id, club = b.club_id;

@@ -4,7 +4,7 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 
 ## Product decisions (agreed with the owner, Oct 2026)
 
-- **Admin only.** One admin runs the night on an iPad or phone. Players never log in. Don't add player accounts, sign-up, or public pages unless asked.
+- **Admin only.** One admin runs the night on an iPad or phone. Players never log in. Don't add player accounts, sign-up, or public pages unless asked. The one public page is `live.html` (owner asked, 22 Oct 2026): a read-only view of tonight opened by a per-night secret link/QR, showing first names, birds, courts, next four and the queue, never MMR or history.
 - **Clubs (ก๊วน).** Every player and night belongs to a club; admins are per club (`club_admins`). An admin can create another club from Settings and becomes its admin, then adds that club's admins. No self sign-up (owner's choice, Oct 2026).
 - **Supabase is the system of record.** The Google Sheet report was removed (owner's call, 21 Oct 2026); results leave the app as a LINE summary text.
 - **Hosting:** static files on GitHub Pages at https://kasidito.github.io/budmintan/ (repo `kasidito/budmintan`, renamed from `badminton-matchmaker` on 21 Oct 2026). No build step, no framework. Keep it plain HTML/CSS/JS with supabase-js loaded from jsDelivr at a pinned version. Run `npm run stamp` before committing any change to `css/` or `js/`: it stamps their links in `index.html` with `?v=<time>` so a phone never runs a new `app.js` against a cached old `algo.js` (that happened on 21 Oct 2026). A unit test checks every link carries the same stamp. Phones may still hold an old `index.html` (Pages caches it for 10 minutes, home-screen apps longer), so `checkUpdate()` in `app.js` fetches `index.html?check=<now>` with `cache: 'no-store'` on start and on every return to the foreground; if its stamp differs from the loaded one it reloads at `?v=<new stamp>` (a URL no cache has), once per stamp, never while an input has focus.
@@ -48,7 +48,8 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
   adj:     [{ at, id, to }],                                   // manual MMR edits
   rules:   [{ id, a, b, kind: 'with'|'apart' }],              // club pair rules, loaded from pair_rules
   days:    [...],                                              // past nights, loaded from DB, never synced
-  flex
+  flex,
+  share, by, at                                                // live-view token; device id + time of the last save (realtime)
 }
 ```
 
@@ -69,6 +70,8 @@ Context for anyone changing this repo. Read it before editing. Keep it current w
 - **Courtside basics (22 Oct 2026)**: Screen Wake Lock on the first tap and on every return to the front (Settings → หน้าตา → จอไม่ดับระหว่างเล่น, `bmm-wake`); the sync pill reads บันทึก HH:MM after a save (`ui.lastSaved`); undo toasts stay 10 s; a court playing `LONG_MIN` (20) minutes gets `.court.long` + `.badge.warn` and the banner names the longest court (`longestText`), all updated by the clock tick; queue chips say "N เกม · รอ M น.".
 - **Tap targets**: every control is at least 44 px (block "tap targets" at the end of `app.css`); `.modechip` and `label.sw` keep a small look with an invisible 44 px ring (`::after`, `z-index:-1`). `tests/a11y.js` (in `npm run e2e`) runs axe-core colour-contrast and target-size plus the 44 px rule on every tab, phone light/dark and iPad.
 - **Attendance** (สรุป → ทุกคืน): `A.attendance(data, today)` gives each member's last night, days away and a weekly streak that forgives one missed week; the card หายไปนาน lists members not checked in tonight who have been away 21+ days, and rows show มาติด N สัปดาห์.
+- **Players' live view** (สนาม → ให้ผู้เล่นดูคิว): `S.share` is a random 16-char token kept in the night's state; after every successful sync `pushLive()` writes `liveView()` (trimmed: names, bird index, games, wait, courts, next four) and the token to `sessions.live` / `sessions.share_token` (`DB.setLive`). `live.html` + `js/live.js` call the security-definer RPC `live_night(token)` (anon, open nights only, returns only club, title, live) every 8 s while visible. เปลี่ยนลิงก์ makes a new token (old link dies), ปิดลิงก์ clears it, End day drops it. The QR is drawn by `qrcode-generator@1.4.4` from jsDelivr, loaded on first use. Migration `20261022120000_live_view_and_realtime.sql`.
+- **Two admin devices** follow each other through Supabase Realtime on `sessions` (`DB.watchNights`, filtered by club; RLS applies). Each save stamps `S.by` (per-tab id in sessionStorage) and `S.at`; `onRemoteNight` ignores its own echoes, never overwrites unsaved local changes (those go up next and win), ignores older states, reloads the club if the night was closed elsewhere, and clears the undo stack after adopting. Last save wins. `tests/fake-supabase.js` emulates Realtime through `storage` events between pages of one browser.
 - Courts-tab clocks tick every 30 s by updating `[data-tick]` texts in place (`courtAge`, `waitText`, `hmSince`), never a full render, so a tap that lands during the update still hits its button.
 - **Undo** is an in-memory stack of state snapshots (`ui.undos`, max 30), pushed by `toast(msg, snapshot)`. Undo keeps the current `sessionId`, `title` and `days`. Cleared on End day.
 - **Edit a member**: pencil on the member row opens name + MMR. The name is written straight to `players` (unique, needs online); the MMR becomes a normal `S.adj` edit (undoable).

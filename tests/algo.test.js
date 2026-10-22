@@ -278,8 +278,8 @@ test('certainty, next bird and idle widening', () => {
 });
 
 test('index.html stamps every local css/js link with the same ?v= (no stale mix on phones)', () => {
-  const html = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8');
-  const links = html.match(/(?:href|src)="(?:css|js)\/[^"]+"/g);
+  const read = f => require('fs').readFileSync(require('path').join(__dirname, '..', f), 'utf8');
+  const links = (read('index.html') + read('live.html')).match(/(?:href|src)="(?:css|js)\/[^"]+"/g);
   const vs = new Set(links.map(l => (l.match(/\?v=(\w+)"/) || [])[1]));
   assert.ok(links.length >= 5 && vs.size === 1 && !vs.has(undefined), links.join(' '));
 });
