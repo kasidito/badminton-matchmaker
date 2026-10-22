@@ -107,6 +107,11 @@
       return function () { try { c.removeChannel(ch); } catch (e) { } };
     },
 
+    /* error log from this device (see logError in app.js): short message, stack, tab, version, device; never names */
+    log: async function (row) {
+      must(await c.from('client_logs').insert(row));
+    },
+
     /* every table, for the "download all data" backup */
     exportAll: async function () {
       var out = { exportedAt: new Date().toISOString() };

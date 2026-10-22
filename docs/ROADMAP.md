@@ -15,6 +15,7 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 | 7 | Run `20261021120000_pair_rules_scores.sql` in the SQL editor | Owner | Done 21 Oct (verified) |
 | 8 | Gmail SMTP (app password) in Authentication → Emails → SMTP, see README "Email" | Owner | Waiting |
 | 9 | Run `20261022120000_live_view_and_realtime.sql` in the SQL editor (players' QR page, two-device follow) | Owner | Done 22 Oct (verified) |
+| 10 | Run `20261022130000_client_logs.sql` in the SQL editor (error log) | Owner | Waiting |
 
 ## Shipped (20–21 Oct)
 
@@ -29,6 +30,7 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 - 21 Oct: pair rules (เล่นคู่กัน / ห้ามเจอกัน), optional real scores (feed MMR margin), UAT walk 53 pass / 0 fail / 5 manual
 - 22 Oct: new bird emblem pictures; courtside basics (screen stays on, 44 px tap targets with an accessibility test, last-saved time, long-court flag, wait time on queue chips); score margin judged against the expected result; uncertainty grows for members away; certainty % and distance to the next bird; members away 3+ weeks and weekly attendance streaks. Research report: `research_notes/` + project doc `badminton-app-research-improve-and-sell.md`
 - 22 Oct (later): demotion buffer 40; Thai typography check + distinct sync icons; infographic uses the new birds; players' live view by QR (`live.html`); two admin devices follow each other (Realtime). Needs `20261022120000_live_view_and_realtime.sql` run in the SQL editor. Thai voice call declined (would disturb other courts)
+- 22 Oct (evening): error log in Supabase (`client_logs`, no names, no outside service) and Settings → รายงานปัญหา. Needs `20261022130000_client_logs.sql` run in the SQL editor
 - Tests: unit, two UI runs, seeded random long runs (`npm run explore`), database permission replay (`npm run test:db`)
 
 ## Next (suggested, owner to pick)

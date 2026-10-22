@@ -97,6 +97,54 @@ const viewText = page => page.textContent('#view');
     await ctx.close();
   }
 
+  /* ---------- error log and the report button ---------- */
+  {
+    const pl = await newPage(browser, base, 390, 844);
+    await pl.evaluate(() => localStorage.clear());
+    await pl.reload();
+    await signIn(pl);
+    await pl.click('[data-tab=people]');
+    await pl.fill('#nameIn', 'Logtester\nก้อง');
+    await pl.click('#addForm button[type=submit]');
+    await saved(pl);
+    await pl.click('[data-tab=play]');
+    // an unexpected error that happens to carry a member's name and an email
+    await pl.evaluate(() => setTimeout(() => { throw new Error('boom near Logtester for someone@example.com'); }, 0));
+    await pl.evaluate(() => { Promise.reject(new Error('lost promise')); });
+    await pl.waitForFunction(() => (window.__fakeDb().client_logs || []).length >= 2, null, { timeout: 5000 }).catch(() => {});
+    const logs = (await db(pl)).client_logs || [];
+    const boom = logs.find(l => /boom/.test(l.message));
+    check('an unexpected error is written to client_logs', !!boom, JSON.stringify(logs));
+    check('an unhandled promise rejection is logged too', logs.some(l => l.kind === 'rejection' && /lost promise/.test(l.message)));
+    check('the log has club, tab, version and device', !!boom && boom.club_id === 1 && boom.tab === 'play' && /^\d+$/.test(boom.app_version || '') && /\d+x\d+/.test(boom.device || ''), JSON.stringify(boom));
+    check('names and emails are cut out of the log', !!boom && !/Logtester|someone@/.test(boom.message + (boom.detail || '')) && /<ชื่อ>/.test(boom.message) && /<email>/.test(boom.message), boom && boom.message);
+    await pl.evaluate(() => setTimeout(() => { throw new Error('boom near Logtester for someone@example.com'); }, 0));
+    await pl.waitForTimeout(400);
+    check('the same error is not logged twice in a row', ((await db(pl)).client_logs || []).filter(l => /boom/.test(l.message)).length === 1);
+    // a save the server refuses (not a network problem) is logged as kind sync, and the app keeps retrying
+    await pl.evaluate(() => { window.__realSync = DB.sync; DB.sync = async () => { const e = new Error('permission denied for table matches'); e.code = '42501'; throw e; }; });
+    await pl.click('[data-tab=people]');
+    await pl.fill('#nameIn', 'Synctester');
+    await pl.click('#addForm button[type=submit]');
+    await pl.waitForSelector('#syncPill.error', { timeout: 8000 }).catch(() => {});
+    await pl.waitForFunction(() => (window.__fakeDb().client_logs || []).some(l => l.kind === 'sync'), null, { timeout: 5000 }).catch(() => {});
+    const syncLog = ((await db(pl)).client_logs || []).find(l => l.kind === 'sync');
+    check('a refused save is logged as sync with its code', !!syncLog && /permission denied/.test(syncLog.message) && /42501/.test(syncLog.detail || ''), JSON.stringify(syncLog));
+    await pl.evaluate(() => { DB.sync = window.__realSync; });
+    await pl.click('#syncPill');
+    await saved(pl);
+    await pl.click('#setBtn');
+    await pl.evaluate(() => { window.__shared = []; navigator.share = t => { window.__shared.push(t.text); return Promise.resolve(); }; });
+    await pl.click('[data-act=report]');
+    await pl.waitForFunction(() => window.__shared.length > 0, null, { timeout: 3000 }).catch(() => {});
+    const rep = await pl.evaluate(() => window.__shared[0] || '');
+    check('report button shares version, sync state and recent errors', /Budmintan รายงานปัญหา/.test(rep) && /เวอร์ชัน: \d+/.test(rep) && /บันทึก: /.test(rep) && /boom/.test(rep) && /lost promise/.test(rep), rep.slice(0, 400));
+    check('the report holds no member names', !/Logtester|ก้อง/.test(rep));
+    check('pressing report also leaves a report row', ((await db(pl)).client_logs || []).some(l => l.kind === 'report'));
+    check('settings shows how many errors are kept', /มีข้อผิดพลาดเก็บไว้ \d+ รายการ/.test(await viewText(pl)));
+    await pl.context().close();
+  }
+
   /* ---------- two admin devices follow each other; players' live view by QR ---------- */
   {
     const qrSrc = fs.readFileSync(require.resolve('qrcode-generator/qrcode.js'), 'utf8');

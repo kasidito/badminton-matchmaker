@@ -49,6 +49,91 @@
     el.textContent = (ui.club ? ui.club.name + ' · ' : '') + (S && S.sessionId ? 'คืนนี้ ' + d : d + ' · ยังไม่เปิดคืน');
   }
   function errMsg(e) { return (e && e.message) ? e.message : String(e); }
+
+  /* ---------- error log ----------
+     Unexpected errors and failed saves go to public.client_logs (Supabase only, no outside service) so the owner can
+     read them without screenshots. The last 20 also stay on this device (localStorage bmm-logs) for the report button,
+     and ones made offline are sent after the next good save. Player names and emails are cut out before anything is
+     kept; the same message is kept at most once per 10 minutes and at most 20 are sent per page load. */
+  var LOGKEY = 'bmm-logs', LOGMAX = 20, logs = { seen: {}, sent: 0, busy: false };
+  function logsRead() { try { var a = JSON.parse(localStorage.getItem(LOGKEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+  function logsWrite(a) { try { localStorage.setItem(LOGKEY, JSON.stringify(a.slice(-LOGMAX))); } catch (e) { } }
+  function scrub(text, max) {
+    var t = String(text == null ? '' : text)
+      .replace(/Key \([^)]*\)=\([^)]*\)/g, 'Key (…)=(…)')
+      .replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g, '<email>');
+    var names = [];
+    ((S && S.players) || []).forEach(function (p) { if (p && p.name) names.push(p.name); ((p && p.aliases) || []).forEach(function (n) { names.push(n); }); });
+    names.filter(function (n) { return String(n).trim().length >= 2; }).sort(function (a, b) { return b.length - a.length; })
+      .forEach(function (n) { t = t.split(n).join('<ชื่อ>'); });
+    return t.length > max ? t.slice(0, max - 1) + '…' : t;
+  }
+  function deviceText() {
+    var standalone = false;
+    try { standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches; } catch (e) { }
+    return ((navigator.userAgent || '').slice(0, 220) + ' | ' + (standalone ? 'home-screen' : 'browser') + ' | ' + screen.width + 'x' + screen.height).slice(0, 300);
+  }
+  function logError(kind, message, detail) {
+    try {
+      var msg = scrub(message || 'unknown', 500), key = kind + '|' + msg, now = Date.now();
+      if (logs.seen[key] && now - logs.seen[key] < 600000) return;
+      logs.seen[key] = now;
+      var a = logsRead();
+      a.push({ at: now, kind: kind, message: msg, detail: detail ? scrub(detail, 4000) : null, tab: String(ui.tab || '').slice(0, 20), v: myStamp(), club: ui.club ? ui.club.id : null, sent: false });
+      logsWrite(a);
+      sendLogs();
+    } catch (e) { }
+  }
+  async function sendLogs() {
+    if (logs.busy || !ui.user || navigator.onLine === false || !window.DB) return;
+    var todo = logsRead().filter(function (e) { return !e.sent; });
+    if (!todo.length) return;
+    logs.busy = true;
+    var done = [];
+    try {
+      for (var i = 0; i < todo.length && logs.sent < 20; i++) {
+        var e = todo[i];
+        await DB.log({ club_id: e.club, kind: e.kind, message: e.message, detail: e.detail, tab: e.tab, app_version: e.v, device: deviceText() });
+        done.push(e.at + '|' + e.message); logs.sent++;
+      }
+    } catch (x) { }                                   // never log a failure to log
+    finally {
+      logs.busy = false;
+      if (done.length) logsWrite(logsRead().map(function (e) { if (done.indexOf(e.at + '|' + e.message) >= 0) e.sent = true; return e; }));
+    }
+  }
+  window.addEventListener('error', function (ev) {
+    if (!ev || (!ev.message && !ev.error)) return;
+    logError('error', ev.message || errMsg(ev.error), (ev.error && ev.error.stack) || ((ev.filename || '') + ':' + (ev.lineno || 0) + ':' + (ev.colno || 0)));
+  });
+  window.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    if (r && r.name === 'AbortError') return;          // a closed share sheet, not a bug
+    logError('rejection', errMsg(r), r && r.stack);
+  });
+  function reportText() {
+    var d = new Date(), pad = function (n) { return ('0' + n).slice(-2); };
+    var hm = function (ms) { var t = new Date(ms); return pad(t.getDate()) + '/' + pad(t.getMonth() + 1) + ' ' + pad(t.getHours()) + ':' + pad(t.getMinutes()); };
+    var here = S ? S.players.filter(function (p) { return p.active; }).length : 0;
+    var lines = [
+      'Budmintan รายงานปัญหา',
+      'เวลา: ' + hm(d.getTime()) + '/' + d.getFullYear(),
+      'เวอร์ชัน: ' + (myStamp() || '-'),
+      'ก๊วน: #' + (ui.club ? ui.club.id : '-') + ' · คืน #' + (S && S.sessionId || '-'),
+      'หน้า: ' + ui.tab,
+      'บันทึก: ' + ui.status + (ui.statusMsg ? ' (' + scrub(ui.statusMsg, 200) + ')' : '') + (ui.lastSaved ? ' · ล่าสุด ' + hm(ui.lastSaved) : '') + (sync.dirty ? ' · มีของค้างบันทึก' : ''),
+      'เน็ต: ' + (navigator.onLine === false ? 'ออฟไลน์' : 'ออนไลน์'),
+      'คืนนี้: มา ' + here + ' คน · ' + (S ? S.done.length : 0) + ' แมตช์ · ' + (S ? S.courts.length : 0) + ' สนาม',
+      'เครื่อง: ' + deviceText()
+    ];
+    var a = logsRead().filter(function (e) { return e.kind !== 'report'; });
+    lines.push('', 'ข้อผิดพลาดล่าสุด (' + a.length + '):');
+    if (!a.length) lines.push('- ไม่มี');
+    a.slice().reverse().forEach(function (e, i) {
+      lines.push((i + 1) + '. ' + hm(e.at) + ' [' + e.kind + '] ' + e.message + ' · หน้า ' + (e.tab || '-') + (e.sent ? '' : ' · ยังไม่ส่ง'));
+    });
+    return lines.join('\n');
+  }
   function iso(ms) { return ms ? new Date(ms).toISOString() : null; }
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function confirmTap(key) {
@@ -180,10 +265,11 @@
         await DB.sync(S.sessionId, buildPayload());
       }
       writeCache(); ui.lastSaved = Date.now();
-      pushLive();
+      pushLive(); sendLogs();
       setStatus(sync.dirty ? 'pending' : 'saved');
     } catch (e) {
       sync.dirty = true; writeCache();
+      if (!isOffline(e)) logError('sync', errMsg(e), e && e.code ? 'code ' + e.code : null);
       setStatus(navigator.onLine ? 'error' : 'offline', errMsg(e));
       clearTimeout(sync.timer); sync.timer = setTimeout(runSync, 10000);
     } finally {
@@ -1192,7 +1278,9 @@
     var account = '<div class="srow"><div class="stext"><b>' + esc(ui.user && ui.user.email || '') + '</b><span>เข้าสู่ระบบอยู่</span></div><button class="btn sm" data-act="logout">' + ic('logout') + 'ออกจากระบบ</button></div>' +
       '<form id="pwForm" class="sblock add" autocomplete="off"><label class="small">เปลี่ยนรหัสผ่าน<input class="field" id="newPw" type="password" minlength="8" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร"></label><button class="btn sm" type="submit">เปลี่ยนรหัสผ่าน</button></form>';
 
-    var data = '<div class="srow"><div class="stext"><b>ดาวน์โหลดข้อมูลทั้งหมด</b><span>ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์</span></div><button class="btn sm" data-act="export">' + ic('download') + 'ดาวน์โหลด</button></div>' +
+    var nLogs = logsRead().filter(function (e) { return e.kind !== 'report'; }).length;
+    var data = '<div class="srow"><div class="stext"><b>รายงานปัญหา</b><span>คัดลอกข้อมูลวินิจฉัยไปวางในแชท · ' + (nLogs ? 'มีข้อผิดพลาดเก็บไว้ ' + nLogs + ' รายการ' : 'ยังไม่มีข้อผิดพลาด') + '</span></div><button class="btn sm" data-act="report">' + ic('bug') + 'รายงานปัญหา</button></div>' +
+      '<div class="srow"><div class="stext"><b>ดาวน์โหลดข้อมูลทั้งหมด</b><span>ไฟล์ JSON ของสมาชิก ทุกคืน และทุกแมตช์</span></div><button class="btn sm" data-act="export">' + ic('download') + 'ดาวน์โหลด</button></div>' +
       '<details class="sdetails"' + det('flex') + '><summary><span class="stext"><b>ความยืดหยุ่นของคิว</b><span>ตอนนี้ ' + (S.flex || 0) + ' · สนามแข่งขันและสังสรรค์</span></span>' + ic('chev') + '</summary><div class="sbody">' +
       '<div class="line"><span class="muted small">เลือกจากคิวเพิ่มได้อีกกี่คน</span>' + seg('ความยืดหยุ่นของคิว', [[0, '0'], [2, '2'], [4, '4'], [6, '6']], S.flex || 0, 'flex', 'n') + '</div>' +
       '<p class="muted small">0 = ตามคิวเป๊ะ · ยิ่งมาก ระดับยิ่งใกล้ แต่บางคนอาจรอนานขึ้นนิดหน่อย คนที่เล่นน้อยกว่ายังได้ก่อนเสมอ</p></div></details>' +
@@ -1466,6 +1554,7 @@
       } else ui.toast = null;
     }
     else if (a === 'export') { downloadAll(); return; }
+    else if (a === 'report') { var rep = reportText(); logError('report', 'ผู้ดูแลกดรายงานปัญหา', rep); shareText(rep); return; }
     else if (a === 'win') { var c = S.live[ci], s = +t.dataset.s; if (c) c.w = c.w === s ? null : s; }
     else if (a === 'save') {
       var lc = S.live[ci], ids0 = lc ? lc.t[0].concat(lc.t[1]) : [], rb = A.ratings(S.done, S.players, S.adj);

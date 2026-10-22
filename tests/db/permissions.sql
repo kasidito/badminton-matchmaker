@@ -78,6 +78,23 @@ begin
   exception when others then r := r || ', anon create_club=denied'; end;
   execute 'reset role';
 
+  -- error logs: an admin can add a row for their own club only, and reads only their clubs' rows
+  perform set_config('request.jwt.claims', json_build_object('sub', owner)::text, true);
+  execute 'set local role authenticated';
+  insert into public.client_logs (club_id, kind, message) values (1, 'error', 'test'); r := r || E'\nowner log for club1=ok';
+  begin insert into public.client_logs (club_id, kind, message) values (cid, 'error', 'x'); r := r || ', owner log for a club they left=ALLOWED(BAD)';
+  exception when others then r := r || ', owner log for a club they left=blocked'; end;
+  begin insert into public.client_logs (club_id, user_id, kind, message) values (1, b, 'error', 'x'); r := r || ', log as someone else=ALLOWED(BAD)';
+  exception when others then r := r || ', log as someone else=blocked'; end;
+  begin update public.client_logs set message = 'changed'; get diagnostics n = row_count; if n > 0 then r := r || ', edit logs=ALLOWED(BAD)'; else r := r || ', edit logs=blocked'; end if;
+  exception when others then r := r || ', edit logs=blocked'; end;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', json_build_object('sub', b)::text, true);
+  execute 'set local role authenticated';
+  select count(*) into n from public.client_logs where club_id = 1; if n > 0 then r := r || ', B reads club1 logs=ALLOWED(BAD)'; else r := r || ', B reads club1 logs=0'; end if;
+  execute 'reset role';
+  perform set_config('request.jwt.claims', '', true);
+
   -- players' live view: only the right token on an open night, and only the trimmed live picture
   update public.sessions set share_token = 'tok-0123456789abcdef', live = '{"courts":[]}' where id = s1;
   execute 'set local role anon';

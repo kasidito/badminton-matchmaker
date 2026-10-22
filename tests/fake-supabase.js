@@ -12,7 +12,7 @@
       clubs: [{ id: 1, name: 'ก๊วนแบด' }],
       club_admins: [{ club_id: 1, user_id: 'u1' }],
       players: names.map(function (n, i) { return { id: i + 1, club_id: 1, name: n, level: 'I', start_mmr: 1500, start_sigma: null, aliases: [], career_games: 0, active: true }; }),
-      sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: [], pair_rules: []
+      sessions: [], session_players: [], matches: [], match_players: [], rating_adjustments: [], pair_rules: [], client_logs: []
     };
   }
   var db = JSON.parse(localStorage.getItem(KEY) || 'null') || fresh();
@@ -41,7 +41,7 @@
       }
     };
     function exec() {
-      var rows = db[table];
+      var rows = db[table] || (db[table] = []);
       var me = db.auth && db.auth.user.id;
       var mine = db.club_admins.filter(function (x) { return x.user_id === me; }).map(function (x) { return x.club_id; });
       // row level security, roughly: clubs and club-owned rows are visible only to that club's admins
@@ -64,6 +64,10 @@
             if ((r.status || 'open') === 'open' && db.sessions.some(function (s) { return s.club_id === r.club_id && s.status === 'open'; })) fail('duplicate key value violates unique constraint "sessions_one_open"', '23505');
             r = Object.assign({ status: 'open', court_modes: ['normal', 'normal', 'normal'], flex: 4, state: null, played_on: today(), started_at: new Date().toISOString(), ended_at: null }, r);
             r.court_count = r.court_modes.length;
+          }
+          if (table === 'client_logs') {
+            if (!me || (r.club_id != null && mine.indexOf(r.club_id) < 0)) fail('new row violates row-level security policy for table "client_logs"', '42501');
+            r = Object.assign({ id: rows.length + 1, created_at: new Date().toISOString(), user_id: me }, r);
           }
           if (db.seq[table] != null) r.id = ++db.seq[table];
           rows.push(r); return r;
