@@ -14,7 +14,7 @@ Status as of 22 Oct 2026. Owner decides order; update this file when something s
 | 6 | Run `20261021090000_openskill_aliases_club_tools.sql` in the SQL editor | Owner | Done 21 Oct |
 | 7 | Run `20261021120000_pair_rules_scores.sql` in the SQL editor | Owner | Done 21 Oct (verified) |
 | 8 | Gmail SMTP (app password) in Authentication → Emails → SMTP, see README "Email" | Owner | Waiting |
-| 9 | Run `20261022120000_live_view_and_realtime.sql` in the SQL editor (players' QR page, two-device follow) | Owner | Waiting |
+| 9 | Run `20261022120000_live_view_and_realtime.sql` in the SQL editor (players' QR page, two-device follow) | Owner | Done 22 Oct (verified) |
 
 ## Shipped (20–21 Oct)
 
